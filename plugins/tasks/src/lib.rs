@@ -4,19 +4,20 @@ mod view;
 
 pub use view::TasksView;
 
-use std::{error::Error, fmt};
+use std::{collections::HashSet, error::Error, fmt};
 
 use rusqlite::{OptionalExtension, Row, params, types::Type};
 use tuilane_core::{
-    CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
+    CommandContext, CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker,
+    ServiceRegistrationError,
 };
 use tuilane_plugin_api::items::{
     ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, ItemSummaryError, SearchDocument,
 };
 use tuilane_plugin_api::search::TaskSearchDocumentsV1;
 use tuilane_plugin_api::tasks::{
-    Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskSummary,
-    TaskTitle, TasksByDateV1, TasksChangedV1,
+    MAX_TASK_BATCH_SIZE, Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId,
+    TaskStatus, TaskSummary, TaskTitle, TasksByDateV1, TasksChangedV1,
 };
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
@@ -33,6 +34,10 @@ pub enum TaskError {
     NotFound(TaskId),
     UnsupportedSchemaVersion(i64),
     InvalidStoredValue(String),
+    BulkBatchSize(usize),
+    DuplicateBulkTask(TaskId),
+    StaleBulkTask(TaskId),
+    Cancelled,
     ItemReference(ItemReferenceError),
     ItemSummary(ItemSummaryError),
 }
@@ -52,6 +57,18 @@ impl fmt::Display for TaskError {
                     "task database contains an invalid value: {value}"
                 )
             }
+            Self::BulkBatchSize(size) => write!(
+                formatter,
+                "task batch size must be between 1 and {MAX_TASK_BATCH_SIZE}; received {size}"
+            ),
+            Self::DuplicateBulkTask(id) => {
+                write!(formatter, "task '{id}' appears more than once in the batch")
+            }
+            Self::StaleBulkTask(id) => write!(
+                formatter,
+                "task '{id}' changed or no longer exists since the batch was prepared"
+            ),
+            Self::Cancelled => formatter.write_str("task operation was cancelled before execution"),
             Self::ItemReference(error) => error.fmt(formatter),
             Self::ItemSummary(error) => error.fmt(formatter),
         }
@@ -64,9 +81,13 @@ impl Error for TaskError {
             Self::Storage(error) => Some(error),
             Self::ItemReference(error) => Some(error),
             Self::ItemSummary(error) => Some(error),
-            Self::NotFound(_) | Self::UnsupportedSchemaVersion(_) | Self::InvalidStoredValue(_) => {
-                None
-            }
+            Self::NotFound(_)
+            | Self::UnsupportedSchemaVersion(_)
+            | Self::InvalidStoredValue(_)
+            | Self::BulkBatchSize(_)
+            | Self::DuplicateBulkTask(_)
+            | Self::StaleBulkTask(_)
+            | Self::Cancelled => None,
         }
     }
 }
@@ -138,15 +159,18 @@ impl TasksPlugin {
         let command_provider = self.clone();
         let command_events = events.clone();
         commands
-            .register(
-                move |command: TaskCommand| -> Result<TaskCommandResult, TaskError> {
+            .register_with_context(
+                move |command: TaskCommand, context| -> Result<TaskCommandResult, TaskError> {
+                    if context.acknowledge_cancellation() {
+                        return Err(TaskError::Cancelled);
+                    }
                     let notify =
                         !matches!(&command, TaskCommand::Get { .. } | TaskCommand::List { .. });
                     let removed_item = match &command {
                         TaskCommand::Delete { id } => Some(ItemRef::new("task", id.as_str())?),
                         _ => None,
                     };
-                    let response = command_provider.execute(command)?;
+                    let response = command_provider.execute(command, context)?;
                     if notify {
                         command_events.publish(TasksChangedV1);
                     }
@@ -198,7 +222,11 @@ impl TasksPlugin {
     }
 
     /// Executes one validated task operation.
-    fn execute(&self, command: TaskCommand) -> Result<TaskCommandResult, TaskError> {
+    fn execute(
+        &self,
+        command: TaskCommand,
+        context: &CommandContext,
+    ) -> Result<TaskCommandResult, TaskError> {
         match command {
             TaskCommand::Create { title, due_date } => {
                 self.create(title, due_date).map(TaskCommandResult::Task)
@@ -216,6 +244,9 @@ impl TasksPlugin {
             TaskCommand::Complete { id } => self
                 .set_status(&id, TaskStatus::Completed)
                 .map(TaskCommandResult::Task),
+            TaskCommand::CompleteMany { expected_tasks } => self
+                .complete_many(&expected_tasks, context)
+                .map(TaskCommandResult::Tasks),
             TaskCommand::Reopen { id } => self
                 .set_status(&id, TaskStatus::Open)
                 .map(TaskCommandResult::Task),
@@ -325,6 +356,66 @@ impl TasksPlugin {
                 params![status.as_str(), id.as_str()],
             )
         })
+    }
+
+    fn complete_many(
+        &self,
+        expected_tasks: &[Task],
+        context: &CommandContext,
+    ) -> Result<Vec<Task>, TaskError> {
+        if expected_tasks.is_empty() || expected_tasks.len() > MAX_TASK_BATCH_SIZE {
+            return Err(TaskError::BulkBatchSize(expected_tasks.len()));
+        }
+
+        let mut seen = HashSet::with_capacity(expected_tasks.len());
+        for expected in expected_tasks {
+            if !seen.insert(expected.id().as_str()) {
+                return Err(TaskError::DuplicateBulkTask(expected.id().clone()));
+            }
+            if expected.status() != TaskStatus::Open {
+                return Err(TaskError::StaleBulkTask(expected.id().clone()));
+            }
+        }
+
+        if context.acknowledge_cancellation() {
+            return Err(TaskError::Cancelled);
+        }
+
+        let result = self.database.transaction(|transaction| {
+            for expected in expected_tasks {
+                let current = transaction
+                    .query_row(
+                        &format!("SELECT {TASK_COLUMNS} FROM tasks WHERE id = ?1"),
+                        [expected.id().as_str()],
+                        read_task,
+                    )
+                    .optional()?;
+                if current.as_ref() != Some(expected) {
+                    return Ok(Err(expected.id().clone()));
+                }
+            }
+
+            for expected in expected_tasks {
+                transaction.execute(
+                    "UPDATE tasks SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status = 'open'",
+                    [expected.id().as_str()],
+                )?;
+            }
+
+            let completed = expected_tasks
+                .iter()
+                .map(|expected| {
+                    transaction.query_row(
+                        &format!("SELECT {TASK_COLUMNS} FROM tasks WHERE id = ?1"),
+                        [expected.id().as_str()],
+                        read_task,
+                    )
+                })
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(Ok(completed))
+        })?;
+
+        result.map_err(TaskError::StaleBulkTask)
     }
 
     fn update_task(

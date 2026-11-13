@@ -97,7 +97,7 @@ fn registered_operation_descriptors_are_sorted_and_complete() {
         .map(|descriptor| descriptor.id())
         .collect();
 
-    assert_eq!(descriptors.len(), 9);
+    assert_eq!(descriptors.len(), 10);
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
     let write_record = descriptors
         .iter()

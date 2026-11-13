@@ -37,6 +37,12 @@ fn task_operations_use_read_write_and_delete_permissions() {
         "tasks.write"
     );
     assert_eq!(
+        permission_name(&TaskCommand::CompleteMany {
+            expected_tasks: Vec::new(),
+        }),
+        "tasks.write"
+    );
+    assert_eq!(
         permission_name(&TaskCommand::Delete { id: task_id }),
         "tasks.delete"
     );
@@ -170,6 +176,16 @@ fn task_descriptors_expose_stable_ids_shapes_and_effects() {
         id: tuilane_plugin_api::tasks::TaskId::new("550e8400-e29b-41d4-a716-446655440000").unwrap(),
     };
     assert_eq!(delete.descriptor().effect(), CommandEffect::Destructive);
+
+    let complete_many = TaskCommand::CompleteMany {
+        expected_tasks: Vec::new(),
+    };
+    assert_eq!(complete_many.descriptor().id(), "tasks.complete_many@1");
+    assert_eq!(complete_many.descriptor().effect(), CommandEffect::Mutating);
+    assert_eq!(
+        complete_many.descriptor().required_permission().as_str(),
+        "tasks.write"
+    );
 }
 
 #[test]
@@ -194,7 +210,7 @@ fn built_in_command_descriptors_have_unique_ids_and_complete_metadata() {
         .map(|descriptor| descriptor.id())
         .collect();
 
-    assert_eq!(descriptors.len(), 35);
+    assert_eq!(descriptors.len(), 36);
     assert_eq!(ids.len(), descriptors.len());
     assert!(descriptors.iter().all(|descriptor| {
         !descriptor.summary().is_empty()

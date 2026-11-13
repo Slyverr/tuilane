@@ -7,6 +7,9 @@ use crate::{
     ServiceRequest, items::ItemSummary,
 };
 
+/// Maximum number of tasks accepted by one atomic bulk command.
+pub const MAX_TASK_BATCH_SIZE: usize = 100;
+
 /// Stable identifier for a task.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TaskId(Box<str>);
@@ -308,6 +311,10 @@ pub enum TaskCommand {
     Complete {
         id: TaskId,
     },
+    /// Completes unchanged open task snapshots in one atomic operation.
+    CompleteMany {
+        expected_tasks: Vec<Task>,
+    },
     Reopen {
         id: TaskId,
     },
@@ -378,6 +385,14 @@ impl Command for TaskCommand {
             CommandPermission::new("tasks.write"),
         ),
         CommandDescriptor::new(
+            "tasks.complete_many@1",
+            "Complete up to 100 unchanged open tasks atomically.",
+            "expected_tasks: [Task; 1..=100]",
+            "TaskCommandResult::Tasks",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
             "tasks.reopen@1",
             "Reopen a completed task.",
             "id: TaskId",
@@ -403,8 +418,9 @@ impl Command for TaskCommand {
             Self::Rename { .. } => &Self::DESCRIPTORS[3],
             Self::SetDueDate { .. } => &Self::DESCRIPTORS[4],
             Self::Complete { .. } => &Self::DESCRIPTORS[5],
-            Self::Reopen { .. } => &Self::DESCRIPTORS[6],
-            Self::Delete { .. } => &Self::DESCRIPTORS[7],
+            Self::CompleteMany { .. } => &Self::DESCRIPTORS[6],
+            Self::Reopen { .. } => &Self::DESCRIPTORS[7],
+            Self::Delete { .. } => &Self::DESCRIPTORS[8],
         }
     }
 }

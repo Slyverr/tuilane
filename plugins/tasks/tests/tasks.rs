@@ -3,7 +3,8 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use tuilane_core::{
-    CommandCallerId, CommandDispatchError, CommandDispatcher, EventBus, ServiceBroker,
+    CommandCallerId, CommandCancellation, CommandDispatchError, CommandDispatcher, EventBus,
+    ServiceBroker,
 };
 use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::search::TaskSearchDocumentsV1;
@@ -245,6 +246,237 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
     let deletion_receipt = deletion_receipt.expect("authorized deletion includes a receipt");
     assert_eq!(deletion_receipt.command_id(), "tasks.delete@1");
     assert_eq!(deletion_receipt.sequence(), 3);
+}
+
+#[test]
+fn bulk_completion_requires_confirmation_and_completes_the_exact_task_snapshots() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let first = create_task(&mut host.commands, "First task", None);
+    let second = create_task(&mut host.commands, "Second task", None);
+    let snapshots = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: false,
+            })
+            .unwrap(),
+    );
+    let event_count = Rc::new(std::cell::Cell::new(0));
+    let event_target = Rc::clone(&event_count);
+    let _subscription = host.events.subscribe(move |_: &TasksChangedV1| {
+        event_target.set(event_target.get() + 1);
+    });
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    let command = TaskCommand::CompleteMany {
+        expected_tasks: snapshots.clone(),
+    };
+
+    assert!(matches!(
+        host.commands.preview_as(&agent, command.clone()),
+        Err(CommandDispatchError::PermissionDenied {
+            command: "tasks.complete_many@1",
+            ..
+        })
+    ));
+
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.write"),
+    );
+    let prepared = host.commands.preview_as(&agent, command).unwrap();
+    assert!(prepared.preview().request_details().contains("First task"));
+    assert!(prepared.preview().request_details().contains("Second task"));
+    assert_eq!(
+        tasks(
+            host.commands
+                .execute(TaskCommand::List {
+                    include_completed: false,
+                })
+                .unwrap()
+        )
+        .len(),
+        2,
+        "preparing a batch has no side effects"
+    );
+    assert_eq!(event_count.get(), 0);
+
+    let (result, receipt) = host.commands.confirm(prepared).into_parts();
+    let completed = tasks(result.unwrap());
+    assert_eq!(completed.len(), 2);
+    assert!(
+        completed
+            .iter()
+            .all(|task| task.status() == TaskStatus::Completed)
+    );
+    assert!(completed.iter().any(|task| task.id() == first.id()));
+    assert!(completed.iter().any(|task| task.id() == second.id()));
+    let receipt = receipt.expect("authorized bulk completion includes a receipt");
+    assert_eq!(receipt.command_id(), "tasks.complete_many@1");
+    assert_eq!(receipt.outcome(), tuilane_core::CommandOutcome::Succeeded);
+    assert_eq!(event_count.get(), 1);
+
+    assert!(
+        tasks(
+            host.commands
+                .execute(TaskCommand::List {
+                    include_completed: false,
+                })
+                .unwrap()
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn stale_bulk_snapshot_aborts_the_entire_transaction() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let first = create_task(&mut host.commands, "First task", None);
+    let second = create_task(&mut host.commands, "Second task", None);
+    let snapshots = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: false,
+            })
+            .unwrap(),
+    );
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.write"),
+    );
+    let prepared = host
+        .commands
+        .preview_as(
+            &agent,
+            TaskCommand::CompleteMany {
+                expected_tasks: snapshots,
+            },
+        )
+        .unwrap();
+
+    host.commands
+        .execute(TaskCommand::Rename {
+            id: second.id().clone(),
+            title: TaskTitle::new("Changed after preview").unwrap(),
+        })
+        .unwrap();
+    let (result, receipt) = host.commands.confirm(prepared).into_parts();
+
+    assert!(matches!(
+        result,
+        Err(CommandDispatchError::HandlerFailed { ref message, .. })
+            if message.contains("changed or no longer exists")
+    ));
+    let receipt = receipt.expect("attempted batch includes a failure receipt");
+    assert_eq!(receipt.outcome(), tuilane_core::CommandOutcome::Failed);
+
+    let current = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: true,
+            })
+            .unwrap(),
+    );
+    assert!(current.iter().all(|task| task.status() == TaskStatus::Open));
+    assert!(current.iter().any(|task| task.id() == first.id()));
+    assert!(current.iter().any(|task| task.id() == second.id()));
+}
+
+#[test]
+fn cancelled_bulk_confirmation_does_not_change_tasks() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    create_task(&mut host.commands, "First task", None);
+    create_task(&mut host.commands, "Second task", None);
+    let snapshots = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: false,
+            })
+            .unwrap(),
+    );
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.write"),
+    );
+    let prepared = host
+        .commands
+        .preview_as(
+            &agent,
+            TaskCommand::CompleteMany {
+                expected_tasks: snapshots,
+            },
+        )
+        .unwrap();
+    let cancellation = CommandCancellation::new();
+    assert!(cancellation.cancel());
+
+    let (result, receipt) = host
+        .commands
+        .confirm_with_cancellation(prepared, &cancellation)
+        .into_parts();
+
+    assert_eq!(
+        result,
+        Err(CommandDispatchError::Cancelled {
+            command: "tasks.complete_many@1"
+        })
+    );
+    assert!(receipt.is_none());
+    let unchanged = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: false,
+            })
+            .unwrap(),
+    );
+    assert_eq!(unchanged.len(), 2);
+    assert!(
+        unchanged
+            .iter()
+            .all(|task| task.status() == TaskStatus::Open)
+    );
+}
+
+#[test]
+fn bulk_completion_rejects_empty_oversized_and_duplicate_batches() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let task = create_task(&mut host.commands, "One task", None);
+    let snapshot = tasks(
+        host.commands
+            .execute(TaskCommand::List {
+                include_completed: false,
+            })
+            .unwrap(),
+    )
+    .remove(0);
+
+    for expected_tasks in [
+        Vec::new(),
+        vec![snapshot.clone(), snapshot.clone()],
+        vec![snapshot.clone(); tuilane_plugin_api::tasks::MAX_TASK_BATCH_SIZE + 1],
+    ] {
+        assert!(matches!(
+            host.commands
+                .execute(TaskCommand::CompleteMany { expected_tasks }),
+            Err(CommandDispatchError::HandlerFailed { .. })
+        ));
+    }
+
+    let unchanged = match host
+        .commands
+        .execute(TaskCommand::Get {
+            id: task.id().clone(),
+        })
+        .unwrap()
+    {
+        TaskCommandResult::Task(task) => task,
+        _ => panic!("get returns one task"),
+    };
+    assert_eq!(unchanged.status(), TaskStatus::Open);
 }
 
 #[test]
