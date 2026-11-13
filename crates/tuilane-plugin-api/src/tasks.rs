@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, ServiceRequest};
+use crate::{CapabilityId, Command, Event, ServiceRequest};
 
 /// Stable identifier for a task.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -349,6 +349,14 @@ impl ServiceRequest for TasksByDateV1 {
     type Response = Vec<TaskSummary>;
 
     const CAPABILITY: CapabilityId = CapabilityId::new("tasks.query.by_date", 1);
+}
+
+/// Notification emitted after a task mutation has committed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TasksChangedV1;
+
+impl Event for TasksChangedV1 {
+    const NAME: &'static str = "tasks.changed@1";
 }
 
 #[cfg(test)]

@@ -8,11 +8,11 @@ use std::{error::Error, fmt};
 
 use rusqlite::{OptionalExtension, Row, params, types::Type};
 use tuilane_core::{
-    CommandDispatcher, CommandRegistrationError, ServiceBroker, ServiceRegistrationError,
+    CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
 };
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskSummary, TaskTitle,
-    TasksByDateV1,
+    TasksByDateV1, TasksChangedV1,
 };
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
@@ -111,10 +111,22 @@ impl TasksPlugin {
         self,
         commands: &mut CommandDispatcher,
         services: &mut ServiceBroker,
+        events: EventBus,
     ) -> Result<(), TaskRegistrationError> {
         let command_provider = self.clone();
+        let command_events = events.clone();
         commands
-            .register(move |command: TaskCommand| command_provider.execute(command))
+            .register(
+                move |command: TaskCommand| -> Result<TaskCommandResult, TaskError> {
+                    let notify =
+                        !matches!(&command, TaskCommand::Get { .. } | TaskCommand::List { .. });
+                    let response = command_provider.execute(command)?;
+                    if notify {
+                        command_events.publish(TasksChangedV1);
+                    }
+                    Ok(response)
+                },
+            )
             .map_err(TaskRegistrationError::Command)?;
         services
             .register(move |query: TasksByDateV1| self.tasks_by_date(query))
@@ -123,7 +135,7 @@ impl TasksPlugin {
     }
 
     /// Executes one validated task operation.
-    pub fn execute(&self, command: TaskCommand) -> Result<TaskCommandResult, TaskError> {
+    fn execute(&self, command: TaskCommand) -> Result<TaskCommandResult, TaskError> {
         match command {
             TaskCommand::Create { title, due_date } => {
                 self.create(title, due_date).map(TaskCommandResult::Task)

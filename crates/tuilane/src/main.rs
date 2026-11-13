@@ -7,7 +7,7 @@ use ratatui::{
     layout::Rect,
     widgets::{Paragraph, Wrap},
 };
-use tuilane_core::{CommandDispatcher, ServiceBroker};
+use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
@@ -183,6 +183,7 @@ fn print_task(task: &Task) {
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     _services: ServiceBroker,
+    _events: EventBus,
 }
 
 impl Runtime {
@@ -191,10 +192,12 @@ impl Runtime {
         let tasks = TasksPlugin::new(database)?;
         let mut dispatcher = CommandDispatcher::new();
         let mut services = ServiceBroker::new();
-        tasks.register(&mut dispatcher, &mut services)?;
+        let events = EventBus::new();
+        tasks.register(&mut dispatcher, &mut services, events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
             _services: services,
+            _events: events,
         })
     }
 }

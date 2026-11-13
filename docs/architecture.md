@@ -9,10 +9,10 @@ The repository is a six-member Cargo workspace. The `tuilane` executable uses Cl
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
 | `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version and task CLI; composes Tasks, Overview, and Shortcuts views |
-| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, and versioned service broker; events and policy are planned |
+| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
-| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service contracts, and validated task request/response types |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, and validated task request/response types |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date query provider, and TUI contribution |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
@@ -50,7 +50,7 @@ This diagram expresses **allowed ownership and prohibited reverse dependencies**
 
 ## Future host capabilities
 
-The following capabilities remain planned: lifecycle hooks, event delivery, command schemas and caller identities, permission checks, configuration management, and external plugin loading. The current in-process dispatcher and service broker provide typed routing for built-in code; they do not implement authorization, version negotiation, or isolation.
+The following capabilities remain planned: lifecycle hooks, command schemas and caller identities, permission checks, configuration management, and external plugin loading. The current in-process dispatcher, service broker, and event bus route typed built-in contracts; they do not implement authorization, service-version negotiation, or isolation.
 
 The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
 
@@ -95,7 +95,7 @@ Illustrative, **not a finalized wire format**:
 - UI context describes current selection with bounded information, not unrestricted private record access.
 - UI contributions register views, inspector cards, overlays, drawers and contextual actions inside host-owned slots.
 
-**Contract rules:** deterministic resolution of multiple providers; missing optional providers handled gracefully; version negotiation; validation at boundaries; distinguish unavailable/invalid/denied/timed-out/provider-failure outcomes; bounded resource usage; invalidation on unload; scoped telemetry without private payloads. The current broker resolves exact capability identifiers and typed requests. Caller permissions are checked at invocation, not inferred from discovery.
+**Contract rules:** deterministic resolution of multiple providers; missing optional providers handled gracefully; version negotiation; validation at boundaries; distinguish unavailable/invalid/denied/timed-out/provider-failure outcomes; bounded resource usage; invalidation on unload; scoped telemetry without private payloads. The current broker resolves exact capability identifiers and typed requests; event subscriptions end when their handles are dropped. Caller permissions are checked at invocation, not inferred from discovery.
 
 **Representation rule:** JSON-like examples explain the public mental model, not a requirement to serialize every in-process Rust call. A typed Rust dispatcher may execute trusted built-ins efficiently; a future Wasm adapter can translate the same logical contracts into a portable serialized interface. The exact schema language, runtime, registry and transport require implementation experiments.
 

@@ -4,6 +4,12 @@ use std::{error::Error, fmt, str::FromStr};
 
 pub mod tasks;
 
+/// Typed notification published by a host or feature after a completed change.
+pub trait Event: 'static {
+    /// Stable name used for diagnostics.
+    const NAME: &'static str;
+}
+
 /// Stable identifier for a host-discovered service capability.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CapabilityId {
