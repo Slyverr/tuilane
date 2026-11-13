@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Paragraph};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, Workspace, WorkspaceError};
+use tuilane_ui::{FocusArea, View, ViewAction, Workspace, WorkspaceError};
 
 struct TestView {
     descriptor: ViewDescriptor,
@@ -69,6 +69,37 @@ impl View for MinimalView {
 
     fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         frame.render_widget(Paragraph::new("minimal contribution"), area);
+    }
+}
+
+struct ActionView {
+    descriptor: ViewDescriptor,
+    activations: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl View for ActionView {
+    fn descriptor(&self) -> &ViewDescriptor {
+        &self.descriptor
+    }
+
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        frame.render_widget(Paragraph::new("action view"), area);
+    }
+
+    fn command_palette_actions(&self) -> Vec<ViewAction> {
+        vec![ViewAction::new(
+            "create",
+            "Capture item",
+            "Create a new item quickly",
+        )]
+    }
+
+    fn activate_command_palette_action(&mut self, id: &str) -> bool {
+        if id != "create" {
+            return false;
+        }
+        self.activations.set(self.activations.get() + 1);
+        true
     }
 }
 
@@ -237,6 +268,36 @@ fn command_palette_filters_and_switches_to_registered_views() {
     assert!(!workspace.command_palette_is_open());
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
     assert!(!workspace.should_quit());
+}
+
+#[test]
+fn command_palette_activates_view_actions_and_selects_their_owner() {
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    let activations = std::rc::Rc::new(std::cell::Cell::new(0));
+    workspace
+        .register_view(ActionView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("capture").unwrap(),
+                "Capture",
+                "Quickly add a record",
+            ),
+            activations: std::rc::Rc::clone(&activations),
+        })
+        .unwrap();
+
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    for character in "new item quickly".chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "capture");
+    assert_eq!(workspace.focus(), FocusArea::Content);
+    assert_eq!(activations.get(), 1);
+    assert!(!workspace.command_palette_is_open());
 }
 
 #[test]

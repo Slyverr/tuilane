@@ -58,6 +58,10 @@ pub struct Workspace {
 
 enum PaletteAction {
     SelectView(ViewId),
+    ActivateViewAction {
+        view_id: ViewId,
+        action_id: Box<str>,
+    },
     ToggleInspector,
     ToggleDrawer,
     ShowHelp,
@@ -429,6 +433,28 @@ impl Workspace {
                 }
             })
             .collect::<Vec<_>>();
+        entries.extend(self.views.iter().flat_map(|view| {
+            let descriptor = view.descriptor();
+            let view_id = descriptor.id().clone();
+            view.value()
+                .command_palette_actions()
+                .into_iter()
+                .map(move |action| PaletteEntry {
+                    label: action.title().to_owned(),
+                    search_text: format!(
+                        "{} {} {} {}",
+                        descriptor.title(),
+                        action.title(),
+                        action.description(),
+                        action.id()
+                    )
+                    .to_lowercase(),
+                    action: PaletteAction::ActivateViewAction {
+                        view_id: view_id.clone(),
+                        action_id: action.id().into(),
+                    },
+                })
+        }));
         entries.extend([
             PaletteEntry {
                 label: "Toggle inspector".to_owned(),
@@ -488,6 +514,19 @@ impl Workspace {
                     .views
                     .iter()
                     .position(|view| view.descriptor().id() == &id);
+            }
+            PaletteAction::ActivateViewAction { view_id, action_id } => {
+                let index = self
+                    .views
+                    .iter()
+                    .position(|view| view.descriptor().id() == &view_id);
+                if let Some(index) = index {
+                    self.selected = Some(index);
+                    self.focus = FocusArea::Content;
+                    if let Some(view) = self.views.get_mut(index) {
+                        view.value_mut().activate_command_palette_action(&action_id);
+                    }
+                }
             }
             PaletteAction::ToggleInspector => self.toggle_inspector(),
             PaletteAction::ToggleDrawer => self.toggle_drawer(),

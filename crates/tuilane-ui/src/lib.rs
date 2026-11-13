@@ -3,5 +3,5 @@
 mod view;
 mod workspace;
 
-pub use view::View;
+pub use view::{View, ViewAction};
 pub use workspace::{FocusArea, Workspace, WorkspaceError, require_interactive_terminal, run};
