@@ -1,4 +1,13 @@
-use std::{cell::RefCell, error::Error, io, path::PathBuf, process, rc::Rc};
+use std::{
+    cell::RefCell,
+    error::Error,
+    fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
+    process,
+    rc::Rc,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use chrono::Local;
 use clap::{Parser, Subcommand};
@@ -10,6 +19,10 @@ use ratatui::{
 };
 use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_notes::{NotesPlugin, NotesView};
+use tuilane_plugin_api::notes::{
+    Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle,
+};
 use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle,
 };
@@ -44,6 +57,11 @@ enum CliCommand {
     Project {
         #[command(subcommand)]
         command: ProjectCliCommand,
+    },
+    /// Manage Markdown notes.
+    Note {
+        #[command(subcommand)]
+        command: NoteCliCommand,
     },
 }
 
@@ -110,12 +128,38 @@ enum ProjectCliCommand {
     Delete { id: String },
 }
 
+#[derive(Debug, Subcommand)]
+enum NoteCliCommand {
+    /// List notes.
+    List,
+    /// Create a note by opening the configured text editor.
+    Create {
+        /// Note title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Show a note and its Markdown source.
+    Show { id: String },
+    /// Edit a note's Markdown source in the configured text editor.
+    Edit { id: String },
+    /// Rename a note.
+    Rename {
+        id: String,
+        /// Replacement note title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Delete a note.
+    Delete { id: String },
+}
+
 fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
         Some(CliCommand::Task { command }) => run_task_command(command),
         Some(CliCommand::Project { command }) => run_project_command(command),
+        Some(CliCommand::Note { command }) => run_note_command(command),
         None => run_workspace(),
     };
 
@@ -136,6 +180,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
         &runtime.events,
     ))?;
     workspace.register_view(ProjectsView::new(runtime.commands.clone(), &runtime.events))?;
+    workspace.register_view(NotesView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -220,6 +265,138 @@ fn run_project_command(command: ProjectCliCommand) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+fn run_note_command(command: NoteCliCommand) -> Result<(), Box<dyn Error>> {
+    match command {
+        NoteCliCommand::List => {
+            let runtime = Runtime::open()?;
+            let response = runtime.commands.borrow_mut().execute(NoteCommand::List)?;
+            print_note_response(response);
+        }
+        NoteCliCommand::Create { title } => {
+            let title = NoteTitle::new(title)?;
+            let body = Markdown::new(edit_markdown("")?)?;
+            let runtime = Runtime::open()?;
+            let response = runtime
+                .commands
+                .borrow_mut()
+                .execute(NoteCommand::Create { title, body })?;
+            print_note_response(response);
+        }
+        NoteCliCommand::Show { id } => {
+            let runtime = Runtime::open()?;
+            let response = runtime.commands.borrow_mut().execute(NoteCommand::Get {
+                id: NoteId::new(id)?,
+            })?;
+            print_note_response(response);
+        }
+        NoteCliCommand::Edit { id } => {
+            let id = NoteId::new(id)?;
+            let runtime = Runtime::open()?;
+            let note = match runtime
+                .commands
+                .borrow_mut()
+                .execute(NoteCommand::Get { id: id.clone() })?
+            {
+                NoteCommandResult::Note(note) => note,
+                _ => {
+                    return Err(
+                        io::Error::other("note query returned an unexpected response").into(),
+                    );
+                }
+            };
+            let body = Markdown::new(edit_markdown(note.body().as_str())?)?;
+            let response = runtime
+                .commands
+                .borrow_mut()
+                .execute(NoteCommand::SetBody { id, body })?;
+            print_note_response(response);
+        }
+        NoteCliCommand::Rename { id, title } => {
+            let runtime = Runtime::open()?;
+            let response = runtime.commands.borrow_mut().execute(NoteCommand::Rename {
+                id: NoteId::new(id)?,
+                title: NoteTitle::new(title)?,
+            })?;
+            print_note_response(response);
+        }
+        NoteCliCommand::Delete { id } => {
+            let runtime = Runtime::open()?;
+            let response = runtime.commands.borrow_mut().execute(NoteCommand::Delete {
+                id: NoteId::new(id)?,
+            })?;
+            print_note_response(response);
+        }
+    }
+    Ok(())
+}
+
+fn edit_markdown(initial: &str) -> Result<String, Box<dyn Error>> {
+    let editor = std::env::var_os("VISUAL")
+        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var_os("EDITOR").filter(|value| !value.is_empty()))
+        .ok_or_else(|| io::Error::other("set VISUAL or EDITOR to edit Markdown notes"))?;
+    let temporary_file = TemporaryMarkdown::new(initial)?;
+    let status = process::Command::new(editor)
+        .arg(temporary_file.path())
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!("editor exited with status {status}")).into());
+    }
+    Ok(fs::read_to_string(temporary_file.path())?)
+}
+
+struct TemporaryMarkdown(PathBuf);
+
+impl TemporaryMarkdown {
+    fn new(initial: &str) -> io::Result<Self> {
+        static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::temp_dir();
+        for _ in 0..16 {
+            let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(io::Error::other)?
+                .as_nanos();
+            let path = directory.join(format!(
+                "tuilane-note-{}-{timestamp}-{serial}.md",
+                process::id()
+            ));
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            match options.open(&path) {
+                Ok(mut file) => {
+                    if let Err(error) = file.write_all(initial.as_bytes()) {
+                        let _ = fs::remove_file(&path);
+                        return Err(error);
+                    }
+                    return Ok(Self(path));
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate a temporary Markdown file",
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TemporaryMarkdown {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 fn print_task_response(response: TaskCommandResult) {
     match response {
         TaskCommandResult::Task(task) => print_task(&task),
@@ -269,6 +446,32 @@ fn print_project(project: &Project) {
     );
 }
 
+fn print_note_response(response: NoteCommandResult) {
+    match response {
+        NoteCommandResult::Note(note) => print_note(&note),
+        NoteCommandResult::Notes(notes) if notes.is_empty() => println!("No notes."),
+        NoteCommandResult::Notes(notes) => {
+            println!("ID\tTITLE\tUPDATED");
+            for note in &notes {
+                println!("{}\t{}\t{}", note.id(), note.title(), note.updated_at());
+            }
+        }
+        NoteCommandResult::Deleted(id) => println!("Deleted note {id}."),
+    }
+}
+
+fn print_note(note: &Note) {
+    println!(
+        "{}\t{}\t{}\t{}",
+        note.id(),
+        note.title(),
+        note.created_at(),
+        note.updated_at()
+    );
+    println!("---");
+    println!("{}", note.body().as_str());
+}
+
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     services: Rc<RefCell<ServiceBroker>>,
@@ -279,12 +482,14 @@ impl Runtime {
     fn open() -> Result<Self, Box<dyn Error>> {
         let database = SqliteDatabase::open(database_path()?)?;
         let tasks = TasksPlugin::new(database.clone())?;
-        let projects = ProjectsPlugin::new(database)?;
+        let projects = ProjectsPlugin::new(database.clone())?;
+        let notes = NotesPlugin::new(database)?;
         let mut dispatcher = CommandDispatcher::new();
         let mut services = ServiceBroker::new();
         let events = EventBus::new();
         tasks.register(&mut dispatcher, &mut services, events.clone())?;
         projects.register(&mut dispatcher, &mut services, events.clone())?;
+        notes.register(&mut dispatcher, &mut services, events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
             services: Rc::new(RefCell::new(services)),

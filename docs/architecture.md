@@ -4,18 +4,19 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is an eight-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, and project commands; it composes the terminal shell, Tasks, Calendar, and Projects views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task and project records use SQLite and persist across process restarts.
+The repository is a nine-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, and note commands; it composes the terminal shell, Tasks, Calendar, Projects, and Notes views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, and note records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project CLI; composes Tasks, Calendar, Projects, Overview, and Shortcuts views |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note CLI; composes Tasks, Calendar, Projects, Notes, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
-| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task types, and stable cross-feature item references |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task/note types, and stable cross-feature item references |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution, and committed change/removal events |
 | `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
 | `plugins/projects` | First-party Projects feature | SQLite-backed project CRUD, versioned item lookup service, and TUI contribution |
+| `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution; CLI editing uses `VISUAL` or `EDITOR` |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
@@ -109,7 +110,7 @@ The host owns sidebar/navigation, primary content region, contextual inspector, 
 
 ### Local data and persistence
 
-SQLite is the current local transactional store for Tasks and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/links. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
+SQLite is the current local transactional store for Tasks, Projects, and Notes and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/links. Notes store bounded Markdown text; the CLI opens the user's configured editor using a private temporary file and persists content only after the editor exits successfully. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
 
 ### Optional agents and external plugins
 

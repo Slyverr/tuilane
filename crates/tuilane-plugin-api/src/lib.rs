@@ -3,6 +3,7 @@
 use std::{error::Error, fmt, str::FromStr};
 
 pub mod items;
+pub mod notes;
 pub mod projects;
 pub mod tasks;
 

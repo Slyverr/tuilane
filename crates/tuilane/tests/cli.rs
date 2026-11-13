@@ -192,3 +192,69 @@ fn task_cli_rejects_invalid_dates_and_incomplete_updates() {
             .contains("choose exactly one")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn note_cli_edits_markdown_and_keeps_content_when_editor_fails() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let data_directory = TestDataDirectory::new();
+    let editor_path = data_directory.0.join("editor");
+    fs::write(
+        &editor_path,
+        "#!/bin/sh\nprintf '# Research\\n\\nFirst draft' > \"$1\"\n",
+    )
+    .expect("write temporary editor");
+    fs::set_permissions(&editor_path, fs::Permissions::from_mode(0o700))
+        .expect("make temporary editor executable");
+
+    let create = run_tuilane_with_editor(
+        &["note", "create", "--title", "Research"],
+        &data_directory.0,
+        &editor_path,
+    );
+    assert!(create.status.success());
+    let created = String::from_utf8(create.stdout).expect("create output should be UTF-8");
+    assert!(created.contains("First draft"));
+    let id = created
+        .lines()
+        .next()
+        .and_then(|line| line.split('\t').next())
+        .expect("create output includes the note ID");
+
+    fs::write(
+        &editor_path,
+        "#!/bin/sh\nprintf '\\n\\nRevised draft' >> \"$1\"\n",
+    )
+    .expect("update temporary editor");
+    let edit = run_tuilane_with_editor(&["note", "edit", id], &data_directory.0, &editor_path);
+    assert!(edit.status.success());
+    assert!(
+        String::from_utf8(edit.stdout)
+            .unwrap()
+            .contains("Revised draft")
+    );
+
+    fs::write(&editor_path, "#!/bin/sh\nexit 2\n").expect("replace with failing editor");
+    let failed_edit =
+        run_tuilane_with_editor(&["note", "edit", id], &data_directory.0, &editor_path);
+    assert_eq!(failed_edit.status.code(), Some(1));
+
+    let show = run_tuilane_with_data(&["note", "show", id], &data_directory.0);
+    let shown = String::from_utf8(show.stdout).expect("show output should be UTF-8");
+    assert!(show.status.success());
+    assert!(shown.contains("First draft"));
+    assert!(shown.contains("Revised draft"));
+}
+
+#[cfg(unix)]
+fn run_tuilane_with_editor(args: &[&str], data_directory: &Path, editor: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_tuilane"))
+        .args(args)
+        .env("TUILANE_DATA_DIR", data_directory)
+        .env_remove("VISUAL")
+        .env("EDITOR", editor)
+        .stdin(Stdio::null())
+        .output()
+        .expect("failed to run tuilane")
+}
