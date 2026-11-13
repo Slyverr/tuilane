@@ -6,6 +6,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 - Add a keyboard command palette for switching registered views and running workspace actions.
 - Add standalone SQLite backup creation and confirmed restore commands.
+- Add full-text search across tasks, projects, notes, and ideas with item-kind filtering.
 
 ## [0.4.0] - 2026-11-13
 

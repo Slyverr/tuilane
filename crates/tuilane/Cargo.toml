@@ -17,6 +17,7 @@ tuilane-links.workspace = true
 tuilane-notes.workspace = true
 tuilane-plugin-api.workspace = true
 tuilane-projects.workspace = true
+tuilane-search.workspace = true
 tuilane-storage.workspace = true
 tuilane-tasks.workspace = true
 tuilane-ui.workspace = true

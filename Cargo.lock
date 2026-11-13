@@ -1023,6 +1023,7 @@ dependencies = [
  "tuilane-notes",
  "tuilane-plugin-api",
  "tuilane-projects",
+ "tuilane-search",
  "tuilane-storage",
  "tuilane-tasks",
  "tuilane-ui",

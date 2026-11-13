@@ -281,6 +281,67 @@ fn backup_roundtrip_restores_workspace_data_and_requires_confirmation() {
 
 #[cfg(unix)]
 #[test]
+fn search_cli_finds_owner_content_and_filters_by_kind() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let data_directory = TestDataDirectory::new();
+    let editor = data_directory.0.join("editor");
+    fs::write(
+        &editor,
+        "#!/bin/sh\nprintf 'distinctive fieldwork phrase' > \"$1\"\n",
+    )
+    .expect("write temporary editor");
+    fs::set_permissions(&editor, fs::Permissions::from_mode(0o700))
+        .expect("make temporary editor executable");
+
+    let task = run_tuilane_with_data(
+        &["task", "create", "--title", "Distinctive fieldwork task"],
+        &data_directory.0,
+    );
+    let project = run_tuilane_with_data(
+        &[
+            "project",
+            "create",
+            "--title",
+            "Distinctive fieldwork project",
+        ],
+        &data_directory.0,
+    );
+    let idea = run_tuilane_with_data(
+        &["idea", "create", "--title", "Distinctive fieldwork idea"],
+        &data_directory.0,
+    );
+    assert!(task.status.success());
+    assert!(project.status.success());
+    assert!(idea.status.success());
+    let note = run_tuilane_with_editor(
+        &["note", "create", "--title", "Fieldwork record"],
+        &data_directory.0,
+        &editor,
+    );
+    assert!(note.status.success());
+
+    let all = run_tuilane_with_data(&["search", "fieldwork"], &data_directory.0);
+    assert!(all.status.success());
+    let output = String::from_utf8(all.stdout).expect("search output should be UTF-8");
+    for item in ["task:", "project:", "idea:", "note:"] {
+        assert!(output.contains(item), "missing {item} from {output}");
+    }
+
+    let notes = run_tuilane_with_data(
+        &["search", "--kind", "note", "distinctive"],
+        &data_directory.0,
+    );
+    assert!(notes.status.success());
+    let output = String::from_utf8(notes.stdout).expect("search output should be UTF-8");
+    assert!(output.contains("note:"));
+    assert!(!output.contains("task:"));
+    assert!(!output.contains("project:"));
+    assert!(!output.contains("idea:"));
+}
+
+#[cfg(unix)]
+#[test]
 fn note_cli_edits_markdown_and_keeps_content_when_editor_fails() {
     use std::os::unix::fs::PermissionsExt;
 

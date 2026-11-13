@@ -31,11 +31,13 @@ use tuilane_plugin_api::notes::{
 use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle,
 };
+use tuilane_plugin_api::search::{SearchCommand, SearchCommandResult, SearchQuery, SearchResult};
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
+use tuilane_search::SearchPlugin;
 use tuilane_storage::SqliteDatabase;
 use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
@@ -82,6 +84,14 @@ enum CliCommand {
     Backup {
         #[command(subcommand)]
         command: BackupCliCommand,
+    },
+    /// Search task, project, note, and idea content.
+    Search {
+        /// Plain-text terms; all terms must match.
+        query: String,
+        /// Restrict results to an item kind such as task, note, or project.
+        #[arg(long)]
+        kind: Option<String>,
     },
 }
 
@@ -249,6 +259,7 @@ fn main() {
         Some(CliCommand::Idea { command }) => run_idea_command(command),
         Some(CliCommand::Link { command }) => run_link_command(command),
         Some(CliCommand::Backup { command }) => run_backup_command(command),
+        Some(CliCommand::Search { query, kind }) => run_search_command(query, kind),
         None => run_workspace(),
     };
 
@@ -276,6 +287,19 @@ fn run_backup_command(command: BackupCliCommand) -> Result<(), Box<dyn Error>> {
             println!("Restored workspace data from {}", path.display());
         }
     }
+    Ok(())
+}
+
+fn run_search_command(query: String, kind: Option<String>) -> Result<(), Box<dyn Error>> {
+    let query = SearchQuery::new(query)?;
+    let command = SearchCommand::new(query);
+    let command = match kind {
+        Some(kind) => command.with_kind(kind)?,
+        None => command,
+    };
+    let runtime = Runtime::open()?;
+    let response = runtime.commands.borrow_mut().execute(command)?;
+    print_search_response(response);
     Ok(())
 }
 
@@ -712,10 +736,45 @@ fn print_link_response(response: LinkCommandResult) {
     }
 }
 
+fn print_search_response(response: SearchCommandResult) {
+    let SearchCommandResult::Results(results) = response;
+    if results.is_empty() {
+        println!("No matching items.");
+        return;
+    }
+    println!("ITEM\tTITLE\tMATCH");
+    for result in results {
+        print_search_result(&result);
+    }
+}
+
+fn print_search_result(result: &SearchResult) {
+    println!(
+        "{}\t{}\t{}",
+        result.item().reference(),
+        single_line(result.item().title()),
+        single_line(result.excerpt())
+    );
+}
+
+fn single_line(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     services: Rc<RefCell<ServiceBroker>>,
     events: EventBus,
+    _search: SearchPlugin,
 }
 
 impl Runtime {
@@ -725,7 +784,7 @@ impl Runtime {
         let projects = ProjectsPlugin::new(database.clone())?;
         let notes = NotesPlugin::new(database.clone())?;
         let ideas = IdeasPlugin::new(database.clone())?;
-        let links = LinksPlugin::new(database)?;
+        let links = LinksPlugin::new(database.clone())?;
         let mut dispatcher = CommandDispatcher::new();
         let services = Rc::new(RefCell::new(ServiceBroker::new()));
         let events = EventBus::new();
@@ -734,10 +793,12 @@ impl Runtime {
         notes.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
         ideas.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
         links.register(&mut dispatcher, services.clone(), events.clone())?;
+        let search = SearchPlugin::register(database, services.clone(), &mut dispatcher, &events)?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
             services,
             events,
+            _search: search,
         })
     }
 }

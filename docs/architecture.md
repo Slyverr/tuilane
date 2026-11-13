@@ -4,11 +4,11 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, and link commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, note, idea, and relation records use SQLite and persist across process restarts.
+The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, link, backup, and search commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, note, idea, and relation records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link CLI; composes Tasks, Calendar, Projects, Notes, Ideas, Links, Overview, and Shortcuts views |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link/backup/search CLI; composes Tasks, Calendar, Projects, Notes, Ideas, Links, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help and command-palette overlays, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, transactional access, validated standalone backup creation, and guarded restore with recovery copy |
@@ -19,7 +19,7 @@ The repository is a twelve-member Cargo workspace. The `tuilane` executable uses
 | `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution; CLI editing uses `VISUAL` or `EDITOR` |
 | `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution |
 | `plugins/links` | First-party Links feature | SQLite-backed directed item relations, backlinks, file/URL references, service-validated endpoints, item-removal cleanup, and TUI contribution |
-| `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; command contract and application composition are being integrated |
+| `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; shared CLI search command and item-kind filter |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
