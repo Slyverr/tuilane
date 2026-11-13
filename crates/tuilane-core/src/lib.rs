@@ -1,6 +1,12 @@
 //! Application kernel primitives that do not depend on a terminal renderer or storage backend.
 
+mod command;
+mod service;
+
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
+
+pub use command::{CommandDispatchError, CommandDispatcher, CommandRegistrationError};
+pub use service::{ServiceBroker, ServiceBrokerError, ServiceRegistrationError};
 
 /// Ordered host registry for views and their implementations.
 #[derive(Debug, Default)]

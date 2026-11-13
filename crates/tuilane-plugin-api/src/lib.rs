@@ -2,6 +2,56 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
+pub mod tasks;
+
+/// Stable identifier for a host-discovered service capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CapabilityId {
+    name: &'static str,
+    version: u16,
+}
+
+impl CapabilityId {
+    /// Creates a versioned capability identifier.
+    pub const fn new(name: &'static str, version: u16) -> Self {
+        Self { name, version }
+    }
+
+    /// Returns the namespaced service name.
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    /// Returns the contract version.
+    pub const fn version(self) -> u16 {
+        self.version
+    }
+}
+
+impl fmt::Display for CapabilityId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}@{}", self.name, self.version)
+    }
+}
+
+/// Typed request handled by a host-registered service provider.
+pub trait ServiceRequest: 'static {
+    /// The typed response returned by a compatible provider.
+    type Response: 'static;
+
+    /// Stable capability name and version for this request.
+    const CAPABILITY: CapabilityId;
+}
+
+/// Typed command sent through the host's shared command dispatcher.
+pub trait Command: 'static {
+    /// The typed response returned by the command provider.
+    type Response: 'static;
+
+    /// Stable command name used for diagnostics.
+    const NAME: &'static str;
+}
+
 /// Stable identifier for a host-registered view.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewId(Box<str>);
