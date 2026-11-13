@@ -1,76 +1,36 @@
 # tuilane
 
-**A local-first, extensible terminal workspace.**
+**A local-first terminal workspace for everyday work.**
 
-tuilane is an open-source Rust project aiming to bring tasks, projects, notes, ideas, and personal workflows into one keyboard-driven workspace.
+tuilane brings a keyboard-driven terminal interface and command-line tools together for organizing tasks, projects, notes, ideas, and related information.
 
-It combines a terminal user interface (TUI) with a scriptable command-line interface (CLI), allowing different tools and plugins to work together without tightly coupling their implementations.
+## Status
 
-## Vision
+tuilane is in early development. The current workspace includes built-in task, project, note, idea, calendar, link, and search features backed by local storage. External plugins, synchronization, and AI integrations are not implemented.
 
-- **One workspace:** Organize everyday work without switching between unrelated terminal applications.
-- **Local-first:** Your data stays on your machine, without requiring cloud services or accounts.
-- **Extensible:** Built-in and third-party plugins contribute functionality through shared, host-managed contracts.
-- **Keyboard-driven:** Fast navigation, commands, and workflows designed for the terminal.
-- **Modular:** Keep features independent, maintainable, and replaceable.
+## Get started
 
-## Project status
-
-**Early development.**
-
-The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views, plus CLI commands for those features and full-text search across tasks, projects, notes, and ideas. The shell command palette opens with `Ctrl-P`, switches between registered views, runs workspace actions, and offers quick-create actions for tasks, projects, notes, and ideas. The Search view accepts `/` to enter a query, `f` to cycle item-kind filters, and provides a selected result in the inspector. From the command palette, users can save the current query and browse or run named search views; the CLI can also list and delete them. Saved views preserve the query and optional item-kind filter in SQLite. The shell supports built-in theme, layout, and keymap presets through a versioned TOML configuration file. Tasks, projects, notes, ideas, and relations are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Links support directed relations, backlinks, and file/URL references between validated first-party items. Portable SQLite backups are supported; loadable plugins are not implemented yet.
-
-For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
-
-## Getting started
-
-Use a compatible Rust toolchain and run the workspace in an interactive terminal:
+Install a Rust toolchain with `rustfmt`, `clippy`, and a native linker, then run:
 
 ```sh
 cargo run -p tuilane
 cargo run -p tuilane -- --help
-cargo run -p tuilane -- --version
-cargo run -p tuilane -- config check
-cargo run -p tuilane -- task create --title "Review documentation" --due 2026-11-20
-cargo run -p tuilane -- task list
-cargo run -p tuilane -- project create --title "Release planning"
-cargo run -p tuilane -- project list
-cargo run -p tuilane -- note list
-cargo run -p tuilane -- note show NOTE_ID
-cargo run -p tuilane -- idea create --title "Connect project reviews with notes"
-cargo run -p tuilane -- idea list
-cargo run -p tuilane -- link add idea:IDEA_ID note:NOTE_ID
-cargo run -p tuilane -- link list idea:IDEA_ID
-cargo run -p tuilane -- link backlinks note:NOTE_ID
-cargo run -p tuilane -- link add-reference idea:IDEA_ID --url https://example.org/research
-cargo run -p tuilane -- backup create ./workspace-backup.sqlite3
-cargo run -p tuilane -- backup restore ./workspace-backup.sqlite3 --yes
-cargo run -p tuilane -- search "release notes"
-cargo run -p tuilane -- search --kind note "release notes"
-cargo run -p tuilane -- search "release notes" --save "Release references"
-cargo run -p tuilane -- saved-search list
-cargo run -p tuilane -- saved-search run "Release references"
-cargo run -p tuilane -- saved-search delete "Release references"
 ```
 
-Backup creation does not overwrite an existing file. Restore replaces all current workspace data and requires `--yes`.
+For a workspace check and tests:
 
-Task, project, note, idea, and relation data is stored in the platform's application data directory. Set `TUILANE_DATA_DIR` to use a different data directory. Link item references use the form `kind:UUID`, where the UUID comes from a task, project, note, or idea command. Replace uppercase `*_ID` placeholders in the examples with those returned IDs. Note creation and editing open the executable named by `VISUAL` or `EDITOR` (`VISUAL` takes precedence). For example, set `EDITOR=nvim` before running `cargo run -p tuilane -- note create --title "Research"` or `cargo run -p tuilane -- note edit NOTE_ID`. Set the variable to one executable path; it is invoked directly without a shell.
+```sh
+cargo check --workspace
+cargo test --workspace
+```
 
-User-facing installation instructions will be added when installable releases become available.
+## Project information
 
-Configuration presets and validation are documented in [Configuration](docs/configuration.md).
-
-## Development and contributing
-
-Contributions, feedback, and suggestions are welcome as the project develops.
-
-- [Contributing](CONTRIBUTING.md) — Development setup, contribution workflow, and quality requirements.
-- [Roadmap](ROADMAP.md) — Planned capabilities and development milestones.
-- [Architecture](docs/architecture.md) — System design and technical direction.
-
-For AI-assisted development, see [AGENTS.md](AGENTS.md).
+- [Contributing](CONTRIBUTING.md) — development setup and contribution workflow.
+- [Roadmap](ROADMAP.md) — planned milestones and their acceptance criteria.
+- [Architecture](docs/architecture.md) — crate responsibilities and system design.
+- [Configuration](docs/configuration.md) — supported shell settings.
 
 ## License
 
-tuilane is intended to be dual-licensed under MIT or Apache-2.0, at your option. See `LICENSE-MIT` and `LICENSE-APACHE` for the applicable terms.
+tuilane is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
