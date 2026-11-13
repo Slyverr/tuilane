@@ -4,6 +4,10 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
+- Add a navigable Calendar view that queries due tasks through the host broker and refreshes after task changes.
+
 ## [0.2.0] - 2026-11-13
 
 - Add SQLite-backed task CRUD through the CLI and TUI with a shared command path and versioned due-date query service.

@@ -61,7 +61,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-01. Add real SQLite migrations, task models and a `plugins/tasks` crate; implement validated Tasks CRUD, CLI/TUI parity, `tasks.query.by_date@1` and service discovery through the host. **Verify:** restart durability, transaction/error handling, invalid/denied calls and no cross-plugin private access. **Exclude:** external plugin runtime and other domain modules.
 
-### CH-03 · candidate v0.3.0 — Calendar integration
+### CH-03 · v0.3.0 — Calendar integration
 
 **Depends:** CH-02. Calendar provides month/date navigation and an inspector contribution; queries Tasks through the host broker and updates after committed changes. **Verify:** missing/disabled Tasks, incompatible service version, refresh and no direct dependency on Tasks implementation. **Exclude:** calendar sync, meeting backend and advanced recurrence.
 
