@@ -6,7 +6,7 @@ pub use view::SearchView;
 
 use std::{cell::RefCell, error::Error, fmt, rc::Rc};
 
-use rusqlite::params;
+use rusqlite::{ErrorCode, params};
 use tuilane_core::{
     CommandDispatcher, CommandRegistrationError, EventBus, EventSubscription, ServiceBroker,
     ServiceBrokerError,
@@ -18,8 +18,10 @@ use tuilane_plugin_api::{
     notes::NotesChangedV1,
     projects::ProjectsChangedV1,
     search::{
-        IdeaSearchDocumentsV1, NoteSearchDocumentsV1, ProjectSearchDocumentsV1, SearchCommand,
-        SearchCommandResult, SearchQuery, SearchResult, TaskSearchDocumentsV1,
+        DeleteSavedSearchCommand, IdeaSearchDocumentsV1, ListSavedSearchesCommand,
+        NoteSearchDocumentsV1, ProjectSearchDocumentsV1, SaveSavedSearchCommand, SavedSearch,
+        SavedSearchName, SearchCommand, SearchCommandResult, SearchQuery, SearchResult,
+        TaskSearchDocumentsV1,
     },
     tasks::TasksChangedV1,
 };
@@ -27,8 +29,9 @@ use tuilane_storage::{SqliteDatabase, StorageError};
 
 const SEARCH_MIGRATIONS: &str =
     "CREATE TABLE IF NOT EXISTS tuilane_search_migrations (version INTEGER PRIMARY KEY NOT NULL);";
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 const SEARCH_INDEX: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS tuilane_search_index USING fts5(item_ref UNINDEXED, kind UNINDEXED, title, content);";
+const SAVED_SEARCHES: &str = "CREATE TABLE tuilane_saved_searches (name TEXT PRIMARY KEY COLLATE NOCASE NOT NULL, query TEXT NOT NULL, kind TEXT);";
 
 /// Errors returned by workspace search operations.
 #[derive(Debug)]
@@ -38,6 +41,8 @@ pub enum SearchError {
     ServiceBrokerBusy,
     CommandRegistration(CommandRegistrationError),
     UnsupportedSchemaVersion(i64),
+    SavedSearchAlreadyExists(String),
+    InvalidStoredSavedSearch(String),
     InvalidStoredReference(String),
     InvalidStoredSummary(String),
 }
@@ -53,6 +58,12 @@ impl fmt::Display for SearchError {
                 formatter,
                 "search schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
             ),
+            Self::SavedSearchAlreadyExists(name) => {
+                write!(formatter, "saved search '{name}' already exists")
+            }
+            Self::InvalidStoredSavedSearch(message) => {
+                write!(formatter, "saved search data is invalid: {message}")
+            }
             Self::InvalidStoredReference(reference) => {
                 write!(
                     formatter,
@@ -77,6 +88,8 @@ impl Error for SearchError {
             Self::CommandRegistration(error) => Some(error),
             Self::ServiceBrokerBusy
             | Self::UnsupportedSchemaVersion(_)
+            | Self::SavedSearchAlreadyExists(_)
+            | Self::InvalidStoredSavedSearch(_)
             | Self::InvalidStoredReference(_)
             | Self::InvalidStoredSummary(_) => None,
         }
@@ -124,6 +137,33 @@ impl SearchPlugin {
                         command_stale.borrow_mut().take();
                     }
                     search(&command_database, &command)
+                },
+            )
+            .map_err(SearchError::CommandRegistration)?;
+
+        let command_database = database.clone();
+        commands
+            .register(
+                move |command: SaveSavedSearchCommand| -> Result<SavedSearch, SearchError> {
+                    save_saved_search(&command_database, command.search())
+                },
+            )
+            .map_err(SearchError::CommandRegistration)?;
+
+        let command_database = database.clone();
+        commands
+            .register(
+                move |_: ListSavedSearchesCommand| -> Result<Vec<SavedSearch>, SearchError> {
+                    list_saved_searches(&command_database)
+                },
+            )
+            .map_err(SearchError::CommandRegistration)?;
+
+        let command_database = database.clone();
+        commands
+            .register(
+                move |command: DeleteSavedSearchCommand| -> Result<bool, SearchError> {
+                    delete_saved_search(&command_database, command.name())
                 },
             )
             .map_err(SearchError::CommandRegistration)?;
@@ -185,12 +225,86 @@ fn migrate(database: &SqliteDatabase) -> Result<(), SearchError> {
                 [],
             )?;
         }
+        if current < 2 {
+            transaction.execute_batch(SAVED_SEARCHES)?;
+            transaction.execute(
+                "INSERT INTO tuilane_search_migrations (version) VALUES (2)",
+                [],
+            )?;
+        }
         Ok(current)
     })?;
     if current > CURRENT_SCHEMA_VERSION {
         return Err(SearchError::UnsupportedSchemaVersion(current));
     }
     Ok(())
+}
+
+fn save_saved_search(
+    database: &SqliteDatabase,
+    search: &SavedSearch,
+) -> Result<SavedSearch, SearchError> {
+    let result = database.transaction(|transaction| {
+        transaction.execute(
+            "INSERT INTO tuilane_saved_searches (name, query, kind) VALUES (?1, ?2, ?3)",
+            params![
+                search.name().as_str(),
+                search.query().as_str(),
+                search.kind()
+            ],
+        )?;
+        Ok(())
+    });
+    match result {
+        Ok(()) => Ok(search.clone()),
+        Err(StorageError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+            if error.code == ErrorCode::ConstraintViolation =>
+        {
+            Err(SearchError::SavedSearchAlreadyExists(
+                search.name().as_str().to_owned(),
+            ))
+        }
+        Err(error) => Err(SearchError::Storage(error)),
+    }
+}
+
+fn list_saved_searches(database: &SqliteDatabase) -> Result<Vec<SavedSearch>, SearchError> {
+    let rows = database.with_connection(|connection| {
+        let mut statement = connection.prepare(
+            "SELECT name, query, kind FROM tuilane_saved_searches ORDER BY name COLLATE NOCASE",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+    })?;
+    rows.into_iter()
+        .map(|(name, query, kind)| {
+            let name = SavedSearchName::new(name)
+                .map_err(|error| SearchError::InvalidStoredSavedSearch(error.to_string()))?;
+            let query = SearchQuery::new(query)
+                .map_err(|error| SearchError::InvalidStoredSavedSearch(error.to_string()))?;
+            SavedSearch::new(name, query, kind.as_deref())
+                .map_err(|error| SearchError::InvalidStoredSavedSearch(error.to_string()))
+        })
+        .collect()
+}
+
+fn delete_saved_search(
+    database: &SqliteDatabase,
+    name: &SavedSearchName,
+) -> Result<bool, SearchError> {
+    Ok(database.with_connection(|connection| {
+        connection.execute(
+            "DELETE FROM tuilane_saved_searches WHERE name = ?1",
+            [name.as_str()],
+        )
+    })? > 0)
 }
 
 fn refresh_index(

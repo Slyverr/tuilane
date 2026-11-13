@@ -1,4 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    fs,
+    path::PathBuf,
+    rc::Rc,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -7,8 +13,9 @@ use tuilane_plugin_api::{
     items::{ItemRef, ItemSummary, SearchDocument},
     notes::NotesChangedV1,
     search::{
-        IdeaSearchDocumentsV1, NoteSearchDocumentsV1, ProjectSearchDocumentsV1, SearchCommand,
-        SearchCommandResult, SearchQuery, TaskSearchDocumentsV1,
+        DeleteSavedSearchCommand, IdeaSearchDocumentsV1, ListSavedSearchesCommand,
+        NoteSearchDocumentsV1, ProjectSearchDocumentsV1, SaveSavedSearchCommand, SavedSearch,
+        SavedSearchName, SearchCommand, SearchCommandResult, SearchQuery, TaskSearchDocumentsV1,
     },
 };
 use tuilane_search::SearchPlugin;
@@ -25,6 +32,48 @@ fn document(kind: &str, id: &str, title: &str, content: &str) -> SearchDocument 
 
 fn search_command(query: &str) -> SearchCommand {
     SearchCommand::new(SearchQuery::new(query).unwrap())
+}
+
+struct TestDatabase(PathBuf);
+
+impl TestDatabase {
+    fn new() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "tuilane-search-test-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        Self(directory)
+    }
+
+    fn open(&self) -> SqliteDatabase {
+        SqliteDatabase::open(self.0.join("search.sqlite3")).unwrap()
+    }
+}
+
+impl Drop for TestDatabase {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn empty_search_services() -> Rc<RefCell<ServiceBroker>> {
+    let mut services = ServiceBroker::new();
+    services
+        .register(|_: TaskSearchDocumentsV1| Ok::<_, &'static str>(Vec::<SearchDocument>::new()))
+        .unwrap();
+    services
+        .register(|_: ProjectSearchDocumentsV1| Ok::<_, &'static str>(Vec::<SearchDocument>::new()))
+        .unwrap();
+    services
+        .register(|_: NoteSearchDocumentsV1| Ok::<_, &'static str>(Vec::<SearchDocument>::new()))
+        .unwrap();
+    services
+        .register(|_: IdeaSearchDocumentsV1| Ok::<_, &'static str>(Vec::<SearchDocument>::new()))
+        .unwrap();
+    Rc::new(RefCell::new(services))
 }
 
 #[test]
@@ -156,6 +205,68 @@ fn punctuation_only_queries_return_no_matches_without_fts_errors() {
 
     let SearchCommandResult::Results(results) = commands.execute(search_command("! ? *")).unwrap();
     assert!(results.is_empty());
+}
+
+#[test]
+fn saved_searches_upgrade_the_index_schema_and_survive_reopening() {
+    let file = TestDatabase::new();
+    let saved = SavedSearch::new(
+        SavedSearchName::new("Open tasks").unwrap(),
+        SearchQuery::new("review due date").unwrap(),
+        Some("task"),
+    )
+    .unwrap();
+
+    {
+        let database = file.open();
+        database
+            .with_connection(|connection| {
+                connection.execute_batch(
+                    "CREATE TABLE tuilane_search_migrations (version INTEGER PRIMARY KEY NOT NULL);
+                     INSERT INTO tuilane_search_migrations (version) VALUES (1);
+                     CREATE VIRTUAL TABLE tuilane_search_index USING fts5(item_ref UNINDEXED, kind UNINDEXED, title, content);",
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let services = empty_search_services();
+        let mut commands = CommandDispatcher::new();
+        let events = EventBus::new();
+        let _plugin = SearchPlugin::register(database, services, &mut commands, &events).unwrap();
+
+        commands
+            .execute(SaveSavedSearchCommand::new(saved.clone()))
+            .unwrap();
+        let duplicate = commands
+            .execute(SaveSavedSearchCommand::new(saved.clone()))
+            .unwrap_err();
+        assert!(duplicate.to_string().contains("already exists"));
+    }
+
+    let database = file.open();
+    let services = empty_search_services();
+    let mut commands = CommandDispatcher::new();
+    let events = EventBus::new();
+    let _plugin = SearchPlugin::register(database, services, &mut commands, &events).unwrap();
+    let saved_searches = commands.execute(ListSavedSearchesCommand).unwrap();
+    assert_eq!(saved_searches, vec![saved.clone()]);
+
+    assert!(
+        commands
+            .execute(DeleteSavedSearchCommand::new(saved.name().clone()))
+            .unwrap()
+    );
+    assert!(
+        !commands
+            .execute(DeleteSavedSearchCommand::new(saved.name().clone()))
+            .unwrap()
+    );
+    assert!(
+        commands
+            .execute(ListSavedSearchesCommand)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
