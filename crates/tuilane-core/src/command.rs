@@ -5,14 +5,19 @@ use std::{
     fmt,
 };
 
-use tuilane_plugin_api::{Command, CommandPermission};
+use tuilane_plugin_api::{Command, CommandDescriptor, CommandPermission};
 
 type ErasedHandler = Box<dyn FnMut(Box<dyn Any>) -> Result<Box<dyn Any>, CommandDispatchError>>;
+
+struct RegisteredCommandHandler {
+    handler: ErasedHandler,
+    descriptors: &'static [CommandDescriptor],
+}
 
 /// Host command router shared by CLI and TUI callers.
 #[derive(Default)]
 pub struct CommandDispatcher {
-    handlers: HashMap<TypeId, ErasedHandler>,
+    handlers: HashMap<TypeId, RegisteredCommandHandler>,
     permissions: HashMap<CommandCallerId, HashSet<CommandPermission>>,
 }
 
@@ -60,6 +65,8 @@ impl std::error::Error for CommandCallerIdError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommandRegistrationError {
     DuplicateCommand(&'static str),
+    DuplicateCommandId(&'static str),
+    MissingDescriptors(&'static str),
 }
 
 impl fmt::Display for CommandRegistrationError {
@@ -67,6 +74,15 @@ impl fmt::Display for CommandRegistrationError {
         match self {
             Self::DuplicateCommand(name) => {
                 write!(formatter, "command handler '{name}' is already registered")
+            }
+            Self::DuplicateCommandId(id) => {
+                write!(formatter, "command ID '{id}' is already registered")
+            }
+            Self::MissingDescriptors(name) => {
+                write!(
+                    formatter,
+                    "command handler '{name}' has no operation descriptors"
+                )
             }
         }
     }
@@ -145,22 +161,55 @@ impl CommandDispatcher {
         if self.handlers.contains_key(&type_id) {
             return Err(CommandRegistrationError::DuplicateCommand(C::NAME));
         }
+        if C::DESCRIPTORS.is_empty() {
+            return Err(CommandRegistrationError::MissingDescriptors(C::NAME));
+        }
+
+        let mut command_ids = HashSet::new();
+        for descriptor in C::DESCRIPTORS {
+            if !command_ids.insert(descriptor.id())
+                || self.handlers.values().any(|registered| {
+                    registered
+                        .descriptors
+                        .iter()
+                        .any(|existing| existing.id() == descriptor.id())
+                })
+            {
+                return Err(CommandRegistrationError::DuplicateCommandId(
+                    descriptor.id(),
+                ));
+            }
+        }
 
         self.handlers.insert(
             type_id,
-            Box::new(move |command| {
-                let command = command
-                    .downcast::<C>()
-                    .map_err(|_| CommandDispatchError::HandlerTypeMismatch(C::NAME))?;
-                let response =
-                    handler(*command).map_err(|error| CommandDispatchError::HandlerFailed {
-                        command: C::NAME,
-                        message: error.to_string(),
-                    })?;
-                Ok(Box::new(response))
-            }),
+            RegisteredCommandHandler {
+                handler: Box::new(move |command| {
+                    let command = command
+                        .downcast::<C>()
+                        .map_err(|_| CommandDispatchError::HandlerTypeMismatch(C::NAME))?;
+                    let response =
+                        handler(*command).map_err(|error| CommandDispatchError::HandlerFailed {
+                            command: C::NAME,
+                            message: error.to_string(),
+                        })?;
+                    Ok(Box::new(response))
+                }),
+                descriptors: C::DESCRIPTORS,
+            },
         );
         Ok(())
+    }
+
+    /// Returns all registered operation descriptors in stable ID order.
+    pub fn descriptors(&self) -> Vec<CommandDescriptor> {
+        let mut descriptors: Vec<_> = self
+            .handlers
+            .values()
+            .flat_map(|handler| handler.descriptors.iter().copied())
+            .collect();
+        descriptors.sort_by_key(|descriptor| descriptor.id());
+        descriptors
     }
 
     /// Grants one command permission to a caller identity.
@@ -205,14 +254,15 @@ impl CommandDispatcher {
         caller: &CommandCallerId,
         command: C,
     ) -> Result<C::Response, CommandDispatchError> {
-        let permission = command.required_permission();
+        let descriptor = command.descriptor();
+        let permission = descriptor.required_permission();
         let permitted = self
             .permissions
             .get(caller)
             .is_some_and(|permissions| permissions.contains(&permission));
         if !permitted {
             return Err(CommandDispatchError::PermissionDenied {
-                command: C::NAME,
+                command: descriptor.id(),
                 caller: caller.clone(),
                 permission,
             });
@@ -229,7 +279,7 @@ impl CommandDispatcher {
             .handlers
             .get_mut(&TypeId::of::<C>())
             .ok_or(CommandDispatchError::MissingHandler(C::NAME))?;
-        let response = handler(Box::new(command))?;
+        let response = (handler.handler)(Box::new(command))?;
         response
             .downcast::<C::Response>()
             .map(|response| *response)
@@ -258,9 +308,17 @@ mod tests {
     impl Command for Echo {
         type Response = String;
         const NAME: &'static str = "echo";
+        const DESCRIPTORS: &'static [CommandDescriptor] = &[CommandDescriptor::new(
+            "test.echo@1",
+            "Echo text.",
+            "text: string",
+            "string",
+            tuilane_plugin_api::CommandEffect::Mutating,
+            ECHO_WRITE,
+        )];
 
-        fn required_permission(&self) -> CommandPermission {
-            ECHO_WRITE
+        fn descriptor(&self) -> &'static CommandDescriptor {
+            &Self::DESCRIPTORS[0]
         }
     }
 

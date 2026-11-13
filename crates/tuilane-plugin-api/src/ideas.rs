@@ -2,7 +2,10 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
+use crate::{
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, Event,
+    ServiceRequest, items::ItemSummary,
+};
 
 /// Stable identifier for an idea.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -161,12 +164,56 @@ impl Command for IdeaCommand {
     type Response = IdeaCommandResult;
 
     const NAME: &'static str = "ideas";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[
+        CommandDescriptor::new(
+            "ideas.create@1",
+            "Capture an idea.",
+            "title: IdeaTitle",
+            "IdeaCommandResult::Idea",
+            CommandEffect::Mutating,
+            CommandPermission::new("ideas.write"),
+        ),
+        CommandDescriptor::new(
+            "ideas.get@1",
+            "Get one idea by ID.",
+            "id: IdeaId",
+            "IdeaCommandResult::Idea",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("ideas.read"),
+        ),
+        CommandDescriptor::new(
+            "ideas.list@1",
+            "List ideas.",
+            "{}",
+            "IdeaCommandResult::Ideas",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("ideas.read"),
+        ),
+        CommandDescriptor::new(
+            "ideas.rename@1",
+            "Rename one idea.",
+            "id: IdeaId, title: IdeaTitle",
+            "IdeaCommandResult::Idea",
+            CommandEffect::Mutating,
+            CommandPermission::new("ideas.write"),
+        ),
+        CommandDescriptor::new(
+            "ideas.delete@1",
+            "Delete one idea.",
+            "id: IdeaId",
+            "IdeaCommandResult::Deleted",
+            CommandEffect::Destructive,
+            CommandPermission::new("ideas.delete"),
+        ),
+    ];
 
-    fn required_permission(&self) -> CommandPermission {
+    fn descriptor(&self) -> &'static CommandDescriptor {
         match self {
-            Self::Get { .. } | Self::List => CommandPermission::new("ideas.read"),
-            Self::Create { .. } | Self::Rename { .. } => CommandPermission::new("ideas.write"),
-            Self::Delete { .. } => CommandPermission::new("ideas.delete"),
+            Self::Create { .. } => &Self::DESCRIPTORS[0],
+            Self::Get { .. } => &Self::DESCRIPTORS[1],
+            Self::List => &Self::DESCRIPTORS[2],
+            Self::Rename { .. } => &Self::DESCRIPTORS[3],
+            Self::Delete { .. } => &Self::DESCRIPTORS[4],
         }
     }
 }

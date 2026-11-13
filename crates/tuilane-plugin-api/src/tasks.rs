@@ -2,7 +2,10 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
+use crate::{
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, Event,
+    ServiceRequest, items::ItemSummary,
+};
 
 /// Stable identifier for a task.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -325,16 +328,83 @@ impl Command for TaskCommand {
     type Response = TaskCommandResult;
 
     const NAME: &'static str = "tasks";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[
+        CommandDescriptor::new(
+            "tasks.create@1",
+            "Create a task.",
+            "title: TaskTitle, due_date?: TaskDate",
+            "TaskCommandResult::Task",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
+            "tasks.get@1",
+            "Get one task by ID.",
+            "id: TaskId",
+            "TaskCommandResult::Task",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("tasks.read"),
+        ),
+        CommandDescriptor::new(
+            "tasks.list@1",
+            "List tasks, optionally including completed tasks.",
+            "include_completed: bool",
+            "TaskCommandResult::Tasks",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("tasks.read"),
+        ),
+        CommandDescriptor::new(
+            "tasks.rename@1",
+            "Rename one task.",
+            "id: TaskId, title: TaskTitle",
+            "TaskCommandResult::Task",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
+            "tasks.set_due_date@1",
+            "Set or clear a task due date.",
+            "id: TaskId, due_date: Option<TaskDate>",
+            "TaskCommandResult::Task",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
+            "tasks.complete@1",
+            "Mark a task complete.",
+            "id: TaskId",
+            "TaskCommandResult::Task",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
+            "tasks.reopen@1",
+            "Reopen a completed task.",
+            "id: TaskId",
+            "TaskCommandResult::Task",
+            CommandEffect::Mutating,
+            CommandPermission::new("tasks.write"),
+        ),
+        CommandDescriptor::new(
+            "tasks.delete@1",
+            "Delete one task.",
+            "id: TaskId",
+            "TaskCommandResult::Deleted",
+            CommandEffect::Destructive,
+            CommandPermission::new("tasks.delete"),
+        ),
+    ];
 
-    fn required_permission(&self) -> CommandPermission {
+    fn descriptor(&self) -> &'static CommandDescriptor {
         match self {
-            Self::Get { .. } | Self::List { .. } => CommandPermission::new("tasks.read"),
-            Self::Create { .. }
-            | Self::Rename { .. }
-            | Self::SetDueDate { .. }
-            | Self::Complete { .. }
-            | Self::Reopen { .. } => CommandPermission::new("tasks.write"),
-            Self::Delete { .. } => CommandPermission::new("tasks.delete"),
+            Self::Create { .. } => &Self::DESCRIPTORS[0],
+            Self::Get { .. } => &Self::DESCRIPTORS[1],
+            Self::List { .. } => &Self::DESCRIPTORS[2],
+            Self::Rename { .. } => &Self::DESCRIPTORS[3],
+            Self::SetDueDate { .. } => &Self::DESCRIPTORS[4],
+            Self::Complete { .. } => &Self::DESCRIPTORS[5],
+            Self::Reopen { .. } => &Self::DESCRIPTORS[6],
+            Self::Delete { .. } => &Self::DESCRIPTORS[7],
         }
     }
 }

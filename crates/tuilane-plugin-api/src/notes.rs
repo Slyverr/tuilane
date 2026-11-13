@@ -2,7 +2,10 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
+use crate::{
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, Event,
+    ServiceRequest, items::ItemSummary,
+};
 
 /// Stable identifier for a note.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -202,14 +205,65 @@ impl Command for NoteCommand {
     type Response = NoteCommandResult;
 
     const NAME: &'static str = "notes";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[
+        CommandDescriptor::new(
+            "notes.create@1",
+            "Create a Markdown note.",
+            "title: NoteTitle, body: Markdown",
+            "NoteCommandResult::Note",
+            CommandEffect::Mutating,
+            CommandPermission::new("notes.write"),
+        ),
+        CommandDescriptor::new(
+            "notes.get@1",
+            "Get one note by ID.",
+            "id: NoteId",
+            "NoteCommandResult::Note",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("notes.read"),
+        ),
+        CommandDescriptor::new(
+            "notes.list@1",
+            "List notes.",
+            "{}",
+            "NoteCommandResult::Notes",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("notes.read"),
+        ),
+        CommandDescriptor::new(
+            "notes.rename@1",
+            "Rename one note.",
+            "id: NoteId, title: NoteTitle",
+            "NoteCommandResult::Note",
+            CommandEffect::Mutating,
+            CommandPermission::new("notes.write"),
+        ),
+        CommandDescriptor::new(
+            "notes.set_body@1",
+            "Replace a note's Markdown body.",
+            "id: NoteId, body: Markdown",
+            "NoteCommandResult::Note",
+            CommandEffect::Mutating,
+            CommandPermission::new("notes.write"),
+        ),
+        CommandDescriptor::new(
+            "notes.delete@1",
+            "Delete one note.",
+            "id: NoteId",
+            "NoteCommandResult::Deleted",
+            CommandEffect::Destructive,
+            CommandPermission::new("notes.delete"),
+        ),
+    ];
 
-    fn required_permission(&self) -> CommandPermission {
+    fn descriptor(&self) -> &'static CommandDescriptor {
         match self {
-            Self::Get { .. } | Self::List => CommandPermission::new("notes.read"),
-            Self::Create { .. } | Self::Rename { .. } | Self::SetBody { .. } => {
-                CommandPermission::new("notes.write")
-            }
-            Self::Delete { .. } => CommandPermission::new("notes.delete"),
+            Self::Create { .. } => &Self::DESCRIPTORS[0],
+            Self::Get { .. } => &Self::DESCRIPTORS[1],
+            Self::List => &Self::DESCRIPTORS[2],
+            Self::Rename { .. } => &Self::DESCRIPTORS[3],
+            Self::SetBody { .. } => &Self::DESCRIPTORS[4],
+            Self::Delete { .. } => &Self::DESCRIPTORS[5],
         }
     }
 }

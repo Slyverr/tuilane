@@ -2,7 +2,10 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
+use crate::{
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, Event,
+    ServiceRequest, items::ItemSummary,
+};
 
 /// Stable identifier for a project.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -161,12 +164,56 @@ impl Command for ProjectCommand {
     type Response = ProjectCommandResult;
 
     const NAME: &'static str = "projects";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[
+        CommandDescriptor::new(
+            "projects.create@1",
+            "Create a project.",
+            "title: ProjectTitle",
+            "ProjectCommandResult::Project",
+            CommandEffect::Mutating,
+            CommandPermission::new("projects.write"),
+        ),
+        CommandDescriptor::new(
+            "projects.get@1",
+            "Get one project by ID.",
+            "id: ProjectId",
+            "ProjectCommandResult::Project",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("projects.read"),
+        ),
+        CommandDescriptor::new(
+            "projects.list@1",
+            "List projects.",
+            "{}",
+            "ProjectCommandResult::Projects",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("projects.read"),
+        ),
+        CommandDescriptor::new(
+            "projects.rename@1",
+            "Rename one project.",
+            "id: ProjectId, title: ProjectTitle",
+            "ProjectCommandResult::Project",
+            CommandEffect::Mutating,
+            CommandPermission::new("projects.write"),
+        ),
+        CommandDescriptor::new(
+            "projects.delete@1",
+            "Delete one project.",
+            "id: ProjectId",
+            "ProjectCommandResult::Deleted",
+            CommandEffect::Destructive,
+            CommandPermission::new("projects.delete"),
+        ),
+    ];
 
-    fn required_permission(&self) -> CommandPermission {
+    fn descriptor(&self) -> &'static CommandDescriptor {
         match self {
-            Self::Get { .. } | Self::List => CommandPermission::new("projects.read"),
-            Self::Create { .. } | Self::Rename { .. } => CommandPermission::new("projects.write"),
-            Self::Delete { .. } => CommandPermission::new("projects.delete"),
+            Self::Create { .. } => &Self::DESCRIPTORS[0],
+            Self::Get { .. } => &Self::DESCRIPTORS[1],
+            Self::List => &Self::DESCRIPTORS[2],
+            Self::Rename { .. } => &Self::DESCRIPTORS[3],
+            Self::Delete { .. } => &Self::DESCRIPTORS[4],
         }
     }
 }

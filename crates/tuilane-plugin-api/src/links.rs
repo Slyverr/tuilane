@@ -3,7 +3,8 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    CapabilityId, Command, CommandPermission, Event, ServiceRequest,
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, Event,
+    ServiceRequest,
     items::{ItemRef, ItemSummary},
 };
 
@@ -162,16 +163,74 @@ impl Command for LinkCommand {
     type Response = LinkCommandResult;
 
     const NAME: &'static str = "links";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[
+        CommandDescriptor::new(
+            "links.add@1",
+            "Link two workspace items.",
+            "source: ItemRef, target: ItemRef",
+            "LinkCommandResult::Link",
+            CommandEffect::Mutating,
+            CommandPermission::new("links.write"),
+        ),
+        CommandDescriptor::new(
+            "links.remove@1",
+            "Remove a link between two items.",
+            "source: ItemRef, target: ItemRef",
+            "LinkCommandResult::Removed",
+            CommandEffect::Destructive,
+            CommandPermission::new("links.delete"),
+        ),
+        CommandDescriptor::new(
+            "links.outgoing@1",
+            "List links from one item.",
+            "item: ItemRef",
+            "LinkCommandResult::Items",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("links.read"),
+        ),
+        CommandDescriptor::new(
+            "links.backlinks@1",
+            "List links to one item.",
+            "item: ItemRef",
+            "LinkCommandResult::Items",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("links.read"),
+        ),
+        CommandDescriptor::new(
+            "links.add_reference@1",
+            "Attach a file or URL reference.",
+            "owner: ItemRef, reference: ExternalReference",
+            "LinkCommandResult::Reference",
+            CommandEffect::Mutating,
+            CommandPermission::new("links.write"),
+        ),
+        CommandDescriptor::new(
+            "links.remove_reference@1",
+            "Remove a file or URL reference.",
+            "owner: ItemRef, reference: ExternalReference",
+            "LinkCommandResult::Reference",
+            CommandEffect::Destructive,
+            CommandPermission::new("links.delete"),
+        ),
+        CommandDescriptor::new(
+            "links.references@1",
+            "List references attached to an item.",
+            "owner: ItemRef",
+            "LinkCommandResult::References",
+            CommandEffect::ReadOnly,
+            CommandPermission::new("links.read"),
+        ),
+    ];
 
-    fn required_permission(&self) -> CommandPermission {
+    fn descriptor(&self) -> &'static CommandDescriptor {
         match self {
-            Self::Outgoing { .. } | Self::Backlinks { .. } | Self::References { .. } => {
-                CommandPermission::new("links.read")
-            }
-            Self::Add { .. } | Self::AddReference { .. } => CommandPermission::new("links.write"),
-            Self::Remove { .. } | Self::RemoveReference { .. } => {
-                CommandPermission::new("links.delete")
-            }
+            Self::Add { .. } => &Self::DESCRIPTORS[0],
+            Self::Remove { .. } => &Self::DESCRIPTORS[1],
+            Self::Outgoing { .. } => &Self::DESCRIPTORS[2],
+            Self::Backlinks { .. } => &Self::DESCRIPTORS[3],
+            Self::AddReference { .. } => &Self::DESCRIPTORS[4],
+            Self::RemoveReference { .. } => &Self::DESCRIPTORS[5],
+            Self::References { .. } => &Self::DESCRIPTORS[6],
         }
     }
 }

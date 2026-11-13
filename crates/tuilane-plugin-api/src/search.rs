@@ -2,7 +2,10 @@
 
 use std::{error::Error, fmt};
 
-use crate::{CapabilityId, Command, CommandPermission, ServiceRequest, items::SearchDocument};
+use crate::{
+    CapabilityId, Command, CommandDescriptor, CommandEffect, CommandPermission, ServiceRequest,
+    items::SearchDocument,
+};
 
 /// A validated plain-text full-text query.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,9 +179,17 @@ impl Command for SaveSavedSearchCommand {
     type Response = SavedSearch;
 
     const NAME: &'static str = "search.saved.save";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[CommandDescriptor::new(
+        "search.saved.save@1",
+        "Save a named search.",
+        "search: SavedSearch",
+        "SavedSearch",
+        CommandEffect::Mutating,
+        CommandPermission::new("search.saved.write"),
+    )];
 
-    fn required_permission(&self) -> CommandPermission {
-        CommandPermission::new("search.saved.write")
+    fn descriptor(&self) -> &'static CommandDescriptor {
+        &Self::DESCRIPTORS[0]
     }
 }
 
@@ -190,9 +201,17 @@ impl Command for ListSavedSearchesCommand {
     type Response = Vec<SavedSearch>;
 
     const NAME: &'static str = "search.saved.list";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[CommandDescriptor::new(
+        "search.saved.list@1",
+        "List saved searches.",
+        "{}",
+        "Vec<SavedSearch>",
+        CommandEffect::ReadOnly,
+        CommandPermission::new("search.saved.read"),
+    )];
 
-    fn required_permission(&self) -> CommandPermission {
-        CommandPermission::new("search.saved.read")
+    fn descriptor(&self) -> &'static CommandDescriptor {
+        &Self::DESCRIPTORS[0]
     }
 }
 
@@ -216,9 +235,17 @@ impl Command for DeleteSavedSearchCommand {
     type Response = bool;
 
     const NAME: &'static str = "search.saved.delete";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[CommandDescriptor::new(
+        "search.saved.delete@1",
+        "Delete a saved search.",
+        "name: SavedSearchName",
+        "deleted: bool",
+        CommandEffect::Destructive,
+        CommandPermission::new("search.saved.delete"),
+    )];
 
-    fn required_permission(&self) -> CommandPermission {
-        CommandPermission::new("search.saved.delete")
+    fn descriptor(&self) -> &'static CommandDescriptor {
+        &Self::DESCRIPTORS[0]
     }
 }
 
@@ -297,9 +324,17 @@ impl Command for SearchCommand {
     type Response = SearchCommandResult;
 
     const NAME: &'static str = "search";
+    const DESCRIPTORS: &'static [CommandDescriptor] = &[CommandDescriptor::new(
+        "search.query@1",
+        "Search workspace-owned task, project, note, and idea content.",
+        "query: SearchQuery, kind?: ItemKind",
+        "SearchCommandResult::Results",
+        CommandEffect::ReadOnly,
+        CommandPermission::new("search.read"),
+    )];
 
-    fn required_permission(&self) -> CommandPermission {
-        CommandPermission::new("search.read")
+    fn descriptor(&self) -> &'static CommandDescriptor {
+        &Self::DESCRIPTORS[0]
     }
 }
 

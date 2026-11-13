@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use tuilane_plugin_api::{
-    Command,
+    Command, CommandDescriptor, CommandEffect,
     ideas::IdeaCommand,
     items::ItemRef,
     links::LinkCommand,
@@ -147,4 +149,57 @@ fn search_operations_separate_query_and_saved_search_access() {
         )),
         "search.saved.delete"
     );
+}
+
+#[test]
+fn task_descriptors_expose_stable_ids_shapes_and_effects() {
+    let create = TaskCommand::Create {
+        title: tuilane_plugin_api::tasks::TaskTitle::new("Write tests").unwrap(),
+        due_date: None,
+    };
+    let descriptor = create.descriptor();
+
+    assert_eq!(descriptor.id(), "tasks.create@1");
+    assert_eq!(descriptor.summary(), "Create a task.");
+    assert_eq!(descriptor.input(), "title: TaskTitle, due_date?: TaskDate");
+    assert_eq!(descriptor.output(), "TaskCommandResult::Task");
+    assert_eq!(descriptor.effect(), CommandEffect::Mutating);
+    assert_eq!(descriptor.required_permission().as_str(), "tasks.write");
+
+    let delete = TaskCommand::Delete {
+        id: tuilane_plugin_api::tasks::TaskId::new("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+    };
+    assert_eq!(delete.descriptor().effect(), CommandEffect::Destructive);
+}
+
+#[test]
+fn built_in_command_descriptors_have_unique_ids_and_complete_metadata() {
+    let command_types = [
+        TaskCommand::DESCRIPTORS,
+        ProjectCommand::DESCRIPTORS,
+        NoteCommand::DESCRIPTORS,
+        IdeaCommand::DESCRIPTORS,
+        LinkCommand::DESCRIPTORS,
+        SaveSavedSearchCommand::DESCRIPTORS,
+        ListSavedSearchesCommand::DESCRIPTORS,
+        DeleteSavedSearchCommand::DESCRIPTORS,
+        SearchCommand::DESCRIPTORS,
+    ];
+    let descriptors: Vec<CommandDescriptor> = command_types
+        .iter()
+        .flat_map(|descriptors| descriptors.iter().copied())
+        .collect();
+    let ids: HashSet<_> = descriptors
+        .iter()
+        .map(|descriptor| descriptor.id())
+        .collect();
+
+    assert_eq!(descriptors.len(), 35);
+    assert_eq!(ids.len(), descriptors.len());
+    assert!(descriptors.iter().all(|descriptor| {
+        !descriptor.summary().is_empty()
+            && !descriptor.input().is_empty()
+            && !descriptor.output().is_empty()
+            && !descriptor.required_permission().as_str().is_empty()
+    }));
 }

@@ -63,8 +63,16 @@ pub trait Command: 'static {
     /// Stable command name used for diagnostics.
     const NAME: &'static str;
 
+    /// Available operation descriptors for this command type.
+    const DESCRIPTORS: &'static [CommandDescriptor];
+
+    /// Returns the descriptor for this particular operation.
+    fn descriptor(&self) -> &'static CommandDescriptor;
+
     /// Returns the permission required for this particular operation.
-    fn required_permission(&self) -> CommandPermission;
+    fn required_permission(&self) -> CommandPermission {
+        self.descriptor().required_permission()
+    }
 }
 
 /// Stable, feature-scoped permission required by a command operation.
@@ -83,6 +91,82 @@ impl CommandPermission {
     /// Returns the stable permission name.
     pub const fn as_str(self) -> &'static str {
         self.0
+    }
+}
+
+/// Describes the observable effect of running a command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandEffect {
+    /// Reads or computes information without changing workspace state.
+    ReadOnly,
+    /// Changes workspace state without deleting an existing record.
+    Mutating,
+    /// Deletes a record or removes an existing relationship.
+    Destructive,
+}
+
+/// Host-neutral discovery metadata for one command operation.
+///
+/// The input and output descriptions are logical typed contracts, not a wire
+/// format. Adapters must validate external data into the command's Rust types.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommandDescriptor {
+    id: &'static str,
+    summary: &'static str,
+    input: &'static str,
+    output: &'static str,
+    effect: CommandEffect,
+    required_permission: CommandPermission,
+}
+
+impl CommandDescriptor {
+    /// Creates metadata for one stable operation.
+    pub const fn new(
+        id: &'static str,
+        summary: &'static str,
+        input: &'static str,
+        output: &'static str,
+        effect: CommandEffect,
+        required_permission: CommandPermission,
+    ) -> Self {
+        Self {
+            id,
+            summary,
+            input,
+            output,
+            effect,
+            required_permission,
+        }
+    }
+
+    /// Returns the stable namespaced operation identifier.
+    pub const fn id(self) -> &'static str {
+        self.id
+    }
+
+    /// Returns the short operation description.
+    pub const fn summary(self) -> &'static str {
+        self.summary
+    }
+
+    /// Returns the logical input contract description.
+    pub const fn input(self) -> &'static str {
+        self.input
+    }
+
+    /// Returns the logical output contract description.
+    pub const fn output(self) -> &'static str {
+        self.output
+    }
+
+    /// Returns the declared effect.
+    pub const fn effect(self) -> CommandEffect {
+        self.effect
+    }
+
+    /// Returns the permission required to run the operation.
+    pub const fn required_permission(self) -> CommandPermission {
+        self.required_permission
     }
 }
 
