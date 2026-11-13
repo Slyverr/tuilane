@@ -1,35 +1,21 @@
 # tuilane
 
-**A local-first terminal workspace for everyday work.**
+**A local-first, modular terminal workspace for tasks, projects, notes, ideas, and personal workflows.**
 
-tuilane brings a keyboard-driven terminal interface and command-line tools together for organizing tasks, projects, notes, ideas, and related information.
-
-## Status
-
-tuilane is in early development. The current workspace includes built-in task, project, note, idea, calendar, link, and search features backed by local storage. External plugins, synchronization, and AI integrations are not implemented.
+tuilane brings a command-line interface and keyboard-driven terminal UI together around built-in features backed by local storage. It is in early development; external plugins, synchronization, and AI integrations are future work.
 
 ## Get started
 
-Install a Rust toolchain with `rustfmt`, `clippy`, and a native linker, then run:
+Install the Rust toolchain and a native linker, then run these commands from the workspace root:
 
 ```sh
 cargo run -p tuilane
-cargo run -p tuilane -- --help
-```
-
-For a workspace check and tests:
-
-```sh
-cargo check --workspace
 cargo test --workspace
 ```
 
-## Project information
+## Project details
 
-- [Contributing](CONTRIBUTING.md) — development setup and contribution workflow.
-- [Roadmap](ROADMAP.md) — planned milestones and their acceptance criteria.
-- [Architecture](docs/architecture.md) — crate responsibilities and system design.
-- [Configuration](docs/configuration.md) — supported shell settings.
+See [architecture](docs/architecture.md), [roadmap](ROADMAP.md), and [contributing](CONTRIBUTING.md) for the design, planned milestones, and development setup.
 
 ## License
 
