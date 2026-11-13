@@ -34,8 +34,8 @@ pub enum StorageError {
     UnsupportedFormatVersion(i64),
     BackupDestinationIsDatabase,
     RestoreRecovery {
-        restore: rusqlite::Error,
-        recovery: rusqlite::Error,
+        restore: Box<rusqlite::Error>,
+        recovery: Box<rusqlite::Error>,
     },
 }
 
@@ -66,7 +66,7 @@ impl std::error::Error for StorageError {
         match self {
             Self::Io(error) => Some(error),
             Self::Sqlite(error) => Some(error),
-            Self::RestoreRecovery { restore, .. } => Some(restore),
+            Self::RestoreRecovery { restore, .. } => Some(restore.as_ref()),
             Self::Poisoned => None,
             Self::InvalidBackup(_)
             | Self::UnsupportedFormatVersion(_)
@@ -191,7 +191,10 @@ impl SqliteDatabase {
             let _ = fs::remove_file(&recovery_path);
             return match recovery {
                 Ok(()) => Err(StorageError::Sqlite(restore)),
-                Err(recovery) => Err(StorageError::RestoreRecovery { restore, recovery }),
+                Err(recovery) => Err(StorageError::RestoreRecovery {
+                    restore: Box::new(restore),
+                    recovery: Box::new(recovery),
+                }),
             };
         }
         fs::remove_file(recovery_path)?;
