@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes an interactive shell, Tasks, Calendar, Projects, and Notes views, plus CLI commands for those features. Tasks, projects, and notes are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Ideas, cross-feature links, backups, and loadable plugins are not implemented yet.
+The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, and Ideas views, plus CLI commands for those features. Tasks, projects, notes, and ideas are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Cross-feature links, backups, and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 
@@ -36,9 +36,11 @@ cargo run -p tuilane -- project create --title "Release planning"
 cargo run -p tuilane -- project list
 cargo run -p tuilane -- note list
 cargo run -p tuilane -- note show NOTE_ID
+cargo run -p tuilane -- idea create --title "Connect project reviews with notes"
+cargo run -p tuilane -- idea list
 ```
 
-Task, project, and note data is stored in the platform's application data directory. Set `TUILANE_DATA_DIR` to use a different data directory. Note creation and editing open the executable named by `VISUAL` or `EDITOR` (`VISUAL` takes precedence). For example, set `EDITOR=nvim` before running `cargo run -p tuilane -- note create --title "Research"` or `cargo run -p tuilane -- note edit NOTE_ID`. Set the variable to one executable path; it is invoked directly without a shell.
+Task, project, note, and idea data is stored in the platform's application data directory. Set `TUILANE_DATA_DIR` to use a different data directory. Note creation and editing open the executable named by `VISUAL` or `EDITOR` (`VISUAL` takes precedence). For example, set `EDITOR=nvim` before running `cargo run -p tuilane -- note create --title "Research"` or `cargo run -p tuilane -- note edit NOTE_ID`. Set the variable to one executable path; it is invoked directly without a shell.
 
 User-facing installation instructions will be added when installable releases become available.
 

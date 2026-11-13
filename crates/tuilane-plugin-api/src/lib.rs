@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
+pub mod ideas;
 pub mod items;
 pub mod notes;
 pub mod projects;

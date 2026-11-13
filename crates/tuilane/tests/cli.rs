@@ -247,6 +247,54 @@ fn note_cli_edits_markdown_and_keeps_content_when_editor_fails() {
     assert!(shown.contains("Revised draft"));
 }
 
+#[test]
+fn idea_cli_commands_share_persistent_storage_across_processes() {
+    let data_directory = TestDataDirectory::new();
+    let create = run_tuilane_with_data(
+        &[
+            "idea",
+            "create",
+            "--title",
+            "Connect project reviews to notes",
+        ],
+        &data_directory.0,
+    );
+    assert!(create.status.success());
+    let created = String::from_utf8(create.stdout).expect("create output should be UTF-8");
+    let id = created
+        .trim()
+        .split('\t')
+        .next()
+        .expect("create output includes the idea ID")
+        .to_owned();
+
+    let rename = run_tuilane_with_data(
+        &[
+            "idea",
+            "rename",
+            &id,
+            "--title",
+            "Connect project reviews with notes",
+        ],
+        &data_directory.0,
+    );
+    assert!(rename.status.success());
+
+    let show = run_tuilane_with_data(&["idea", "show", &id], &data_directory.0);
+    let shown = String::from_utf8(show.stdout).expect("show output should be UTF-8");
+    assert!(show.status.success());
+    assert!(shown.contains("Connect project reviews with notes"));
+
+    let list = run_tuilane_with_data(&["idea", "list"], &data_directory.0);
+    assert!(list.status.success());
+    assert!(String::from_utf8(list.stdout).unwrap().contains(&id));
+
+    let delete = run_tuilane_with_data(&["idea", "delete", &id], &data_directory.0);
+    assert!(delete.status.success());
+    let empty = run_tuilane_with_data(&["idea", "list"], &data_directory.0);
+    assert_eq!(empty.stdout, b"No ideas.\n");
+}
+
 #[cfg(unix)]
 fn run_tuilane_with_editor(args: &[&str], data_directory: &Path, editor: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_tuilane"))

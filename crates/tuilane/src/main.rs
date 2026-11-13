@@ -19,7 +19,9 @@ use ratatui::{
 };
 use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_ideas::{IdeasPlugin, IdeasView};
 use tuilane_notes::{NotesPlugin, NotesView};
+use tuilane_plugin_api::ideas::{Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle};
 use tuilane_plugin_api::notes::{
     Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle,
 };
@@ -62,6 +64,11 @@ enum CliCommand {
     Note {
         #[command(subcommand)]
         command: NoteCliCommand,
+    },
+    /// Manage captured ideas.
+    Idea {
+        #[command(subcommand)]
+        command: IdeaCliCommand,
     },
 }
 
@@ -153,6 +160,29 @@ enum NoteCliCommand {
     Delete { id: String },
 }
 
+#[derive(Debug, Subcommand)]
+enum IdeaCliCommand {
+    /// List captured ideas.
+    List,
+    /// Capture an idea.
+    Create {
+        /// Idea title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Show one idea.
+    Show { id: String },
+    /// Rename one idea.
+    Rename {
+        id: String,
+        /// Replacement idea title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Delete one idea.
+    Delete { id: String },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -160,6 +190,7 @@ fn main() {
         Some(CliCommand::Task { command }) => run_task_command(command),
         Some(CliCommand::Project { command }) => run_project_command(command),
         Some(CliCommand::Note { command }) => run_note_command(command),
+        Some(CliCommand::Idea { command }) => run_idea_command(command),
         None => run_workspace(),
     };
 
@@ -181,6 +212,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     ))?;
     workspace.register_view(ProjectsView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(NotesView::new(runtime.commands.clone(), &runtime.events))?;
+    workspace.register_view(IdeasView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -330,6 +362,30 @@ fn run_note_command(command: NoteCliCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_idea_command(command: IdeaCliCommand) -> Result<(), Box<dyn Error>> {
+    let command = match command {
+        IdeaCliCommand::List => IdeaCommand::List,
+        IdeaCliCommand::Create { title } => IdeaCommand::Create {
+            title: IdeaTitle::new(title)?,
+        },
+        IdeaCliCommand::Show { id } => IdeaCommand::Get {
+            id: IdeaId::new(id)?,
+        },
+        IdeaCliCommand::Rename { id, title } => IdeaCommand::Rename {
+            id: IdeaId::new(id)?,
+            title: IdeaTitle::new(title)?,
+        },
+        IdeaCliCommand::Delete { id } => IdeaCommand::Delete {
+            id: IdeaId::new(id)?,
+        },
+    };
+
+    let runtime = Runtime::open()?;
+    let response = runtime.commands.borrow_mut().execute(command)?;
+    print_idea_response(response);
+    Ok(())
+}
+
 fn edit_markdown(initial: &str) -> Result<String, Box<dyn Error>> {
     let editor = std::env::var_os("VISUAL")
         .filter(|value| !value.is_empty())
@@ -472,6 +528,30 @@ fn print_note(note: &Note) {
     println!("{}", note.body().as_str());
 }
 
+fn print_idea_response(response: IdeaCommandResult) {
+    match response {
+        IdeaCommandResult::Idea(idea) => print_idea(&idea),
+        IdeaCommandResult::Ideas(ideas) if ideas.is_empty() => println!("No ideas."),
+        IdeaCommandResult::Ideas(ideas) => {
+            println!("ID\tTITLE\tUPDATED");
+            for idea in &ideas {
+                print_idea(idea);
+            }
+        }
+        IdeaCommandResult::Deleted(id) => println!("Deleted idea {id}."),
+    }
+}
+
+fn print_idea(idea: &Idea) {
+    println!(
+        "{}\t{}\t{}\t{}",
+        idea.id(),
+        idea.title(),
+        idea.created_at(),
+        idea.updated_at()
+    );
+}
+
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     services: Rc<RefCell<ServiceBroker>>,
@@ -483,13 +563,15 @@ impl Runtime {
         let database = SqliteDatabase::open(database_path()?)?;
         let tasks = TasksPlugin::new(database.clone())?;
         let projects = ProjectsPlugin::new(database.clone())?;
-        let notes = NotesPlugin::new(database)?;
+        let notes = NotesPlugin::new(database.clone())?;
+        let ideas = IdeasPlugin::new(database)?;
         let mut dispatcher = CommandDispatcher::new();
         let mut services = ServiceBroker::new();
         let events = EventBus::new();
         tasks.register(&mut dispatcher, &mut services, events.clone())?;
         projects.register(&mut dispatcher, &mut services, events.clone())?;
         notes.register(&mut dispatcher, &mut services, events.clone())?;
+        ideas.register(&mut dispatcher, &mut services, events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
             services: Rc::new(RefCell::new(services)),
