@@ -65,7 +65,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-02. Calendar provides month/date navigation and an inspector contribution; queries Tasks through the host broker and updates after committed changes. **Verify:** missing/disabled Tasks, incompatible service version, refresh and no direct dependency on Tasks implementation. **Exclude:** calendar sync, meeting backend and advanced recurrence.
 
-### CH-04 · candidate v0.4.0 — Connected knowledge
+### CH-04 · v0.4.0 — Connected knowledge
 
 **Depends:** CH-02/CH-03. Introduce Projects, Notes and Ideas feature crates; stable item IDs, cross-feature links, backlinks, file/URL references and Markdown via an external editor. **Verify:** create idea, attach note, link task/project, follow links, edit/rename and restart without orphaning relations. **Exclude:** full WYSIWYG and indiscriminate filesystem indexing.
 
