@@ -246,6 +246,7 @@ fn handler_observes_cooperative_cancellation_and_returns_a_cancelled_receipt() {
             assert!(!context.is_cancelled());
             assert!(handler_cancellation.cancel());
             assert!(context.is_cancelled());
+            assert!(context.acknowledge_cancellation());
             Ok::<_, &'static str>(value)
         })
         .unwrap();
@@ -268,6 +269,32 @@ fn handler_observes_cooperative_cancellation_and_returns_a_cancelled_receipt() {
     let receipt = receipt.expect("started command execution includes a receipt");
     assert_eq!(receipt.outcome(), CommandOutcome::Cancelled);
     assert_eq!(receipt.sequence(), 1);
+}
+
+#[test]
+fn handler_completion_is_not_discarded_when_it_does_not_acknowledge_cancellation() {
+    let cancellation = CommandCancellation::new();
+    let handler_cancellation = cancellation.clone();
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register_with_context(move |WriteRecord(value), _context| {
+            assert!(handler_cancellation.cancel());
+            Ok::<_, &'static str>(value)
+        })
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("completed write".to_owned()))
+        .unwrap();
+
+    let (result, receipt) = dispatcher
+        .confirm_with_cancellation(prepared, &cancellation)
+        .into_parts();
+
+    assert_eq!(result, Ok("completed write".to_owned()));
+    let receipt = receipt.expect("completed handler includes a receipt");
+    assert_eq!(receipt.outcome(), CommandOutcome::Succeeded);
 }
 
 #[test]

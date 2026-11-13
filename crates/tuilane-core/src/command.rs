@@ -69,7 +69,7 @@ pub enum CommandOutcome {
     Succeeded,
     /// The handler or response contract failed.
     Failed,
-    /// Cancellation was requested while the handler was running.
+    /// The handler acknowledged a cancellation request.
     Cancelled,
 }
 
@@ -176,15 +176,29 @@ impl CommandCancellation {
 }
 
 /// Host execution controls made available to a command handler.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CommandContext {
     cancellation: CommandCancellation,
+    cancellation_acknowledged: AtomicBool,
 }
 
 impl CommandContext {
     /// Returns whether the caller requested that this command stop.
     pub fn is_cancelled(&self) -> bool {
         self.cancellation.is_cancelled()
+    }
+
+    /// Acknowledges a pending request after the handler chooses to stop safely.
+    ///
+    /// Returns `true` when cancellation was pending. The dispatcher reports a
+    /// cancelled outcome only when the handler acknowledges the request.
+    pub fn acknowledge_cancellation(&self) -> bool {
+        if !self.is_cancelled() {
+            return false;
+        }
+        self.cancellation_acknowledged
+            .store(true, Ordering::Release);
+        true
     }
 }
 
@@ -441,6 +455,7 @@ impl CommandDispatcher {
     pub fn execute<C: Command>(&mut self, command: C) -> Result<C::Response, CommandDispatchError> {
         let context = CommandContext {
             cancellation: CommandCancellation::new(),
+            cancellation_acknowledged: AtomicBool::new(false),
         };
         self.execute_registered(command, &context)
     }
@@ -571,17 +586,18 @@ impl CommandDispatcher {
 
         let context = CommandContext {
             cancellation: cancellation.clone(),
+            cancellation_acknowledged: AtomicBool::new(false),
         };
         let result = self.execute_registered(command, &context);
-        let cancellation_requested = cancellation.is_cancelled();
-        let result = if cancellation_requested {
+        let cancellation_acknowledged = context.cancellation_acknowledged.load(Ordering::Acquire);
+        let result = if cancellation_acknowledged {
             Err(CommandDispatchError::Cancelled {
                 command: descriptor.id(),
             })
         } else {
             result
         };
-        let outcome = if cancellation_requested {
+        let outcome = if cancellation_acknowledged {
             CommandOutcome::Cancelled
         } else if result.is_ok() {
             CommandOutcome::Succeeded
