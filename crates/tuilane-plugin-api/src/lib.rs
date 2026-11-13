@@ -4,6 +4,7 @@ use std::{error::Error, fmt, str::FromStr};
 
 pub mod ideas;
 pub mod items;
+pub mod links;
 pub mod notes;
 pub mod projects;
 pub mod tasks;
