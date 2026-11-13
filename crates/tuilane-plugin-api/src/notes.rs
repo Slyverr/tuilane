@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, Event, ServiceRequest, items::ItemSummary};
+use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
 
 /// Stable identifier for a note.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -202,6 +202,16 @@ impl Command for NoteCommand {
     type Response = NoteCommandResult;
 
     const NAME: &'static str = "notes";
+
+    fn required_permission(&self) -> CommandPermission {
+        match self {
+            Self::Get { .. } | Self::List => CommandPermission::new("notes.read"),
+            Self::Create { .. } | Self::Rename { .. } | Self::SetBody { .. } => {
+                CommandPermission::new("notes.write")
+            }
+            Self::Delete { .. } => CommandPermission::new("notes.delete"),
+        }
+    }
 }
 
 /// Version 1 lookup for a note's stable cross-feature item reference and title.

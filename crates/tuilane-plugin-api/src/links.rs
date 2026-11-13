@@ -3,7 +3,7 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    CapabilityId, Command, Event, ServiceRequest,
+    CapabilityId, Command, CommandPermission, Event, ServiceRequest,
     items::{ItemRef, ItemSummary},
 };
 
@@ -162,6 +162,18 @@ impl Command for LinkCommand {
     type Response = LinkCommandResult;
 
     const NAME: &'static str = "links";
+
+    fn required_permission(&self) -> CommandPermission {
+        match self {
+            Self::Outgoing { .. } | Self::Backlinks { .. } | Self::References { .. } => {
+                CommandPermission::new("links.read")
+            }
+            Self::Add { .. } | Self::AddReference { .. } => CommandPermission::new("links.write"),
+            Self::Remove { .. } | Self::RemoveReference { .. } => {
+                CommandPermission::new("links.delete")
+            }
+        }
+    }
 }
 
 /// Notification published after a link or external reference changes.

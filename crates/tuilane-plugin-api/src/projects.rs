@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, Event, ServiceRequest, items::ItemSummary};
+use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
 
 /// Stable identifier for a project.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -161,6 +161,14 @@ impl Command for ProjectCommand {
     type Response = ProjectCommandResult;
 
     const NAME: &'static str = "projects";
+
+    fn required_permission(&self) -> CommandPermission {
+        match self {
+            Self::Get { .. } | Self::List => CommandPermission::new("projects.read"),
+            Self::Create { .. } | Self::Rename { .. } => CommandPermission::new("projects.write"),
+            Self::Delete { .. } => CommandPermission::new("projects.delete"),
+        }
+    }
 }
 
 /// Version 1 lookup for a project's stable cross-feature item reference and title.

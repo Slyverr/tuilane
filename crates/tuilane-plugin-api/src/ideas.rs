@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, Event, ServiceRequest, items::ItemSummary};
+use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
 
 /// Stable identifier for an idea.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -161,6 +161,14 @@ impl Command for IdeaCommand {
     type Response = IdeaCommandResult;
 
     const NAME: &'static str = "ideas";
+
+    fn required_permission(&self) -> CommandPermission {
+        match self {
+            Self::Get { .. } | Self::List => CommandPermission::new("ideas.read"),
+            Self::Create { .. } | Self::Rename { .. } => CommandPermission::new("ideas.write"),
+            Self::Delete { .. } => CommandPermission::new("ideas.delete"),
+        }
+    }
 }
 
 /// Version 1 lookup for an idea's stable cross-feature item reference and title.

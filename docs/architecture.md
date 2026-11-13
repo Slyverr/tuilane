@@ -9,10 +9,10 @@ The repository is a twelve-member Cargo workspace. The `tuilane` executable uses
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
 | `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link/backup/search/saved-search/config-check CLI; loads shell presets and composes Tasks, Calendar, Projects, Notes, Ideas, Links, Search, Overview, and Shortcuts views |
-| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
+| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, exact permission grants for explicit callers, versioned service broker, and synchronous typed event bus |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, built-in theme/layout/keymap presets, focus, inspector/drawer slots, help and command-palette overlays with view-contributed actions, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, transactional access, validated standalone backup creation, and guarded restore with recovery copy |
-| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task/note types, stable item references, and typed relation/external-reference contracts |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts with operation-scoped permission requirements, validated task/note types, stable item references, and typed relation/external-reference contracts |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution with command-palette quick creation, and committed change/removal events |
 | `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
 | `plugins/projects` | First-party Projects feature | SQLite-backed project CRUD, versioned item lookup service, and TUI contribution with command-palette creation |
@@ -56,7 +56,9 @@ This diagram expresses **allowed ownership and prohibited reverse dependencies**
 
 ## Future host capabilities
 
-The following capabilities remain planned: lifecycle hooks, command schemas and caller identities, permission checks, plugin-specific configuration management, and external plugin loading. The current in-process dispatcher, service broker, and event bus route typed built-in contracts; they do not implement authorization, service-version negotiation, or isolation.
+Command handlers currently declare stable operation-scoped permissions, and `CommandDispatcher::execute_as` checks the exact grant for a caller assigned by trusted host code. The existing `execute` entry point is reserved for trusted first-party in-process code. The dispatcher does not authenticate callers, and neither entry point isolates statically linked code. Untrusted adapters must keep caller identity assignment at the host boundary and use `execute_as`; they must never expose the trusted entry point.
+
+Command discovery descriptors and input/output schemas, host-managed identity provisioning, previews and confirmations, execution receipts, cancellation, lifecycle hooks, plugin-specific configuration, and external plugin loading remain planned. The current service broker and event bus route typed built-in contracts; they do not implement authorization, service-version negotiation, or isolation.
 
 The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
 

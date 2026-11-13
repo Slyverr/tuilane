@@ -62,6 +62,28 @@ pub trait Command: 'static {
 
     /// Stable command name used for diagnostics.
     const NAME: &'static str;
+
+    /// Returns the permission required for this particular operation.
+    fn required_permission(&self) -> CommandPermission;
+}
+
+/// Stable, feature-scoped permission required by a command operation.
+///
+/// Permission names are declared by trusted command contracts, for example
+/// `tasks.read` or `notes.delete`. They are not caller-provided input.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CommandPermission(&'static str);
+
+impl CommandPermission {
+    /// Creates a permission identifier for a trusted command contract.
+    pub const fn new(name: &'static str) -> Self {
+        Self(name)
+    }
+
+    /// Returns the stable permission name.
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
 }
 
 /// Stable identifier for a host-registered view.

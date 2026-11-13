@@ -2,7 +2,9 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
-use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_core::{
+    CommandCallerId, CommandDispatchError, CommandDispatcher, EventBus, ServiceBroker,
+};
 use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::search::TaskSearchDocumentsV1;
 use tuilane_plugin_api::tasks::{
@@ -114,6 +116,78 @@ fn task_lists_filter_completed_records_and_sort_due_dates() {
     assert_eq!(all[1].id(), later.id());
     assert_eq!(all[2].id(), undated.id());
     assert_eq!(all[0].status(), TaskStatus::Completed);
+}
+
+#[test]
+fn untrusted_callers_need_separate_task_write_and_delete_grants() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    let create = TaskCommand::Create {
+        title: TaskTitle::new("Protected task").unwrap(),
+        due_date: None,
+    };
+
+    assert!(matches!(
+        host.commands.execute_as(&agent, create.clone()),
+        Err(CommandDispatchError::PermissionDenied { .. })
+    ));
+    assert!(
+        tasks(
+            host.commands
+                .execute(TaskCommand::List {
+                    include_completed: true,
+                })
+                .unwrap()
+        )
+        .is_empty()
+    );
+
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.write"),
+    );
+    let task = match host.commands.execute_as(&agent, create).unwrap() {
+        TaskCommandResult::Task(task) => task,
+        _ => panic!("create returns a task"),
+    };
+
+    assert!(matches!(
+        host.commands.execute_as(
+            &agent,
+            TaskCommand::Delete {
+                id: task.id().clone(),
+            },
+        ),
+        Err(CommandDispatchError::PermissionDenied { .. })
+    ));
+    assert_eq!(
+        tasks(
+            host.commands
+                .execute(TaskCommand::List {
+                    include_completed: true,
+                })
+                .unwrap()
+        )
+        .len(),
+        1
+    );
+
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.delete"),
+    );
+    assert!(matches!(
+        host.commands
+            .execute_as(
+                &agent,
+                TaskCommand::Delete {
+                    id: task.id().clone(),
+                },
+            )
+            .unwrap(),
+        TaskCommandResult::Deleted(_)
+    ));
 }
 
 #[test]

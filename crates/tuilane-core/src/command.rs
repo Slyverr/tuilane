@@ -1,6 +1,11 @@
-use std::{any::Any, any::TypeId, collections::HashMap, fmt};
+use std::{
+    any::Any,
+    any::TypeId,
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
-use tuilane_plugin_api::Command;
+use tuilane_plugin_api::{Command, CommandPermission};
 
 type ErasedHandler = Box<dyn FnMut(Box<dyn Any>) -> Result<Box<dyn Any>, CommandDispatchError>>;
 
@@ -8,7 +13,48 @@ type ErasedHandler = Box<dyn FnMut(Box<dyn Any>) -> Result<Box<dyn Any>, Command
 #[derive(Default)]
 pub struct CommandDispatcher {
     handlers: HashMap<TypeId, ErasedHandler>,
+    permissions: HashMap<CommandCallerId, HashSet<CommandPermission>>,
 }
+
+/// Identity assigned by trusted host code to a command caller.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CommandCallerId(Box<str>);
+
+impl CommandCallerId {
+    /// Creates a caller identity from lowercase ASCII letters, digits, `.`, `-`, or `_`.
+    pub fn new(value: impl AsRef<str>) -> Result<Self, CommandCallerIdError> {
+        let value = value.as_ref();
+        if value.is_empty()
+            || value.len() > 128
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+            })
+        {
+            return Err(CommandCallerIdError);
+        }
+
+        Ok(Self(value.into()))
+    }
+
+    /// Returns the stable caller identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Error returned when a command caller identity is empty, oversized, or malformed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommandCallerIdError;
+
+impl fmt::Display for CommandCallerIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(
+            "caller identifiers must contain 1 to 128 lowercase ASCII letters, digits, '.', '-' or '_'",
+        )
+    }
+}
+
+impl std::error::Error for CommandCallerIdError {}
 
 /// Error returned when a command handler cannot be registered.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,6 +78,11 @@ impl std::error::Error for CommandRegistrationError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommandDispatchError {
     MissingHandler(&'static str),
+    PermissionDenied {
+        command: &'static str,
+        caller: CommandCallerId,
+        permission: CommandPermission,
+    },
     HandlerFailed {
         command: &'static str,
         message: String,
@@ -46,6 +97,16 @@ impl fmt::Display for CommandDispatchError {
             Self::MissingHandler(command) => {
                 write!(formatter, "command handler '{command}' is unavailable")
             }
+            Self::PermissionDenied {
+                command,
+                caller,
+                permission,
+            } => write!(
+                formatter,
+                "caller '{}' is not permitted to execute command '{command}' (requires '{}')",
+                caller.as_str(),
+                permission.as_str()
+            ),
             Self::HandlerFailed { command, message } => {
                 write!(formatter, "command '{command}' failed: {message}")
             }
@@ -102,8 +163,68 @@ impl CommandDispatcher {
         Ok(())
     }
 
+    /// Grants one command permission to a caller identity.
+    pub fn grant_permission(&mut self, caller: &CommandCallerId, permission: CommandPermission) {
+        self.permissions
+            .entry(caller.clone())
+            .or_default()
+            .insert(permission);
+    }
+
+    /// Revokes one command permission from a caller identity.
+    pub fn revoke_permission(
+        &mut self,
+        caller: &CommandCallerId,
+        permission: CommandPermission,
+    ) -> bool {
+        let Some(permissions) = self.permissions.get_mut(caller) else {
+            return false;
+        };
+        let removed = permissions.remove(&permission);
+        let is_empty = permissions.is_empty();
+        if is_empty {
+            self.permissions.remove(caller);
+        }
+        removed
+    }
+
     /// Executes a command through its registered host handler.
+    ///
+    /// This trusted in-process entry point is intended for first-party host code.
+    /// External or agent callers must use [`Self::execute_as`].
     pub fn execute<C: Command>(&mut self, command: C) -> Result<C::Response, CommandDispatchError> {
+        self.execute_registered(command)
+    }
+
+    /// Authorizes and executes a command for a caller known to the host.
+    ///
+    /// The caller identity must be assigned by trusted host code and must not be
+    /// copied from untrusted command input.
+    pub fn execute_as<C: Command>(
+        &mut self,
+        caller: &CommandCallerId,
+        command: C,
+    ) -> Result<C::Response, CommandDispatchError> {
+        let permission = command.required_permission();
+        let permitted = self
+            .permissions
+            .get(caller)
+            .is_some_and(|permissions| permissions.contains(&permission));
+        if !permitted {
+            return Err(CommandDispatchError::PermissionDenied {
+                command: C::NAME,
+                caller: caller.clone(),
+                permission,
+            });
+        }
+
+        self.execute_registered(command)
+    }
+
+    fn execute_registered<C: Command>(
+        &mut self,
+        command: C,
+    ) -> Result<C::Response, CommandDispatchError> {
         let handler = self
             .handlers
             .get_mut(&TypeId::of::<C>())
@@ -132,9 +253,15 @@ mod tests {
 
     struct Echo(String);
 
+    const ECHO_WRITE: CommandPermission = CommandPermission::new("test.echo.write");
+
     impl Command for Echo {
         type Response = String;
         const NAME: &'static str = "echo";
+
+        fn required_permission(&self) -> CommandPermission {
+            ECHO_WRITE
+        }
     }
 
     #[test]

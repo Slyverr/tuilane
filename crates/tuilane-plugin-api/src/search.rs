@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use crate::{CapabilityId, Command, ServiceRequest, items::SearchDocument};
+use crate::{CapabilityId, Command, CommandPermission, ServiceRequest, items::SearchDocument};
 
 /// A validated plain-text full-text query.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +176,10 @@ impl Command for SaveSavedSearchCommand {
     type Response = SavedSearch;
 
     const NAME: &'static str = "search.saved.save";
+
+    fn required_permission(&self) -> CommandPermission {
+        CommandPermission::new("search.saved.write")
+    }
 }
 
 /// Lists saved search views in stable name order.
@@ -186,6 +190,10 @@ impl Command for ListSavedSearchesCommand {
     type Response = Vec<SavedSearch>;
 
     const NAME: &'static str = "search.saved.list";
+
+    fn required_permission(&self) -> CommandPermission {
+        CommandPermission::new("search.saved.read")
+    }
 }
 
 /// Deletes one saved search view by name.
@@ -208,6 +216,10 @@ impl Command for DeleteSavedSearchCommand {
     type Response = bool;
 
     const NAME: &'static str = "search.saved.delete";
+
+    fn required_permission(&self) -> CommandPermission {
+        CommandPermission::new("search.saved.delete")
+    }
 }
 
 /// Search request routed through the host command dispatcher.
@@ -285,6 +297,10 @@ impl Command for SearchCommand {
     type Response = SearchCommandResult;
 
     const NAME: &'static str = "search";
+
+    fn required_permission(&self) -> CommandPermission {
+        CommandPermission::new("search.read")
+    }
 }
 
 /// Requests searchable text owned by Tasks.

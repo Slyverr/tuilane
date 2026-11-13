@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, Event, ServiceRequest, items::ItemSummary};
+use crate::{CapabilityId, Command, CommandPermission, Event, ServiceRequest, items::ItemSummary};
 
 /// Stable identifier for a task.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -325,6 +325,18 @@ impl Command for TaskCommand {
     type Response = TaskCommandResult;
 
     const NAME: &'static str = "tasks";
+
+    fn required_permission(&self) -> CommandPermission {
+        match self {
+            Self::Get { .. } | Self::List { .. } => CommandPermission::new("tasks.read"),
+            Self::Create { .. }
+            | Self::Rename { .. }
+            | Self::SetDueDate { .. }
+            | Self::Complete { .. }
+            | Self::Reopen { .. } => CommandPermission::new("tasks.write"),
+            Self::Delete { .. } => CommandPermission::new("tasks.delete"),
+        }
+    }
 }
 
 /// Version 1 query for tasks due on a specific date.
