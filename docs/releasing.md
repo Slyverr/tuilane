@@ -60,7 +60,7 @@ Future externally distributed plugins may use independent versions and compatibi
 Use a focused release-preparation commit after the milestone's implementation and tests are complete:
 
 ```text
-chore: prepare v0.3.0
+chore: prepare v0.2.0
 
 Finalize the completed Tasks milestone for publication.
 
@@ -82,7 +82,7 @@ A patch release is a real publication decision, not an automatic consequence of 
 Use immutable annotated tags of the form `vX.Y.Z` for stable releases:
 
 ```sh
-git tag -a v0.3.0 -m "tuilane v0.3.0"
+git tag -a v0.2.0 -m "tuilane v0.2.0"
 ```
 
 Tag the exact validated, release-ready commit after it has been integrated on `main`. Do not reuse, rewrite, move, delete, or force-push a published version tag. A Git tag and a GitHub Release are distinct objects.
