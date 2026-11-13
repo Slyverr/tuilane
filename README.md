@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes an interactive shell, a local Tasks view, and CLI task commands. Tasks are stored in SQLite and support create, list, show, update, complete, reopen, and delete operations through the same validated host command path. Projects, notes, ideas, calendar, backups, and loadable plugins are not implemented yet.
+The current build includes an interactive shell, a local Tasks view, and CLI task commands. Tasks are stored in SQLite and support create, list, show, update, complete, reopen, and delete operations through the same validated host command path. Calendar month navigation is under development but is not yet composed into the application or connected to Tasks. Projects, notes, ideas, backups, and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 

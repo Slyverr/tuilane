@@ -17,7 +17,7 @@ Completion is proven by implementation, user-visible behavior, and passing accep
 
 ## Current state and naming
 
-The current baseline is a six-member Cargo workspace with a composable terminal shell and first-party Tasks feature in early development. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
+The current baseline is a seven-member Cargo workspace with a composable terminal shell, first-party Tasks feature, and standalone Calendar month navigation in early development. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
 
 Legacy prototype behavior or data should only be ported through tracked, validated tasks after the relevant source/fixtures are available in the repository. Do not depend on private or untracked source locations.
 
