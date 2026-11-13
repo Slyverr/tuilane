@@ -1,7 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Paragraph};
+use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, widgets::Paragraph};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, ViewAction, Workspace, WorkspaceError};
+use tuilane_ui::{
+    FocusArea, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, Workspace,
+    WorkspaceConfig, WorkspaceError,
+};
 
 struct TestView {
     descriptor: ViewDescriptor,
@@ -116,6 +119,68 @@ fn registered_views_navigate_and_can_be_removed() {
     assert!(removed.is_some());
     assert_eq!(workspace.view_count(), 1);
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+}
+
+#[test]
+fn vim_keymap_moves_between_views_from_content_focus() {
+    let mut workspace = Workspace::with_config(WorkspaceConfig::new(
+        ThemePreset::Default,
+        LayoutPreset::Balanced,
+        KeymapPreset::Vim,
+    ));
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+
+    workspace.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    workspace.handle_key(key(KeyCode::Char('k')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+}
+
+#[test]
+fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
+    let mut focus_workspace = Workspace::with_config(WorkspaceConfig::new(
+        ThemePreset::Default,
+        LayoutPreset::Focus,
+        KeymapPreset::Default,
+    ));
+    focus_workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    let mut focus_terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    focus_terminal
+        .draw(|frame| focus_workspace.render(frame))
+        .unwrap();
+    let focus_text = focus_terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(!focus_text.contains("Views"));
+    assert!(focus_text.contains("Overview"));
+
+    let mut themed_workspace = Workspace::with_config(WorkspaceConfig::new(
+        ThemePreset::HighContrast,
+        LayoutPreset::Balanced,
+        KeymapPreset::Default,
+    ));
+    themed_workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    let mut themed_terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    themed_terminal
+        .draw(|frame| themed_workspace.render(frame))
+        .unwrap();
+    assert_eq!(
+        themed_terminal.backend().buffer().cell((1, 2)).unwrap().fg,
+        Color::Yellow
+    );
 }
 
 #[test]

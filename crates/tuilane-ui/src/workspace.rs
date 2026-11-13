@@ -4,14 +4,13 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
     text::{Line, Text},
     widgets::{Block, Borders, Clear, Paragraph},
 };
 use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
 
-use crate::View;
+use crate::{KeymapPreset, LayoutPreset, ThemePreset, View, WorkspaceConfig};
 
 /// The shell region currently receiving keyboard navigation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -53,6 +52,7 @@ pub struct Workspace {
     palette_query: String,
     palette_selected: usize,
     should_quit: bool,
+    config: WorkspaceConfig,
     last_layout: ShellLayout,
 }
 
@@ -94,6 +94,7 @@ impl Default for Workspace {
             palette_query: String::new(),
             palette_selected: 0,
             should_quit: false,
+            config: WorkspaceConfig::default(),
             last_layout: ShellLayout::default(),
         }
     }
@@ -103,6 +104,14 @@ impl Workspace {
     /// Creates an empty workspace shell.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates an empty workspace shell using the supplied presentation presets.
+    pub fn with_config(config: WorkspaceConfig) -> Self {
+        Self {
+            config,
+            ..Self::default()
+        }
     }
 
     /// Registers a view without requiring a central screen switch.
@@ -244,6 +253,10 @@ impl Workspace {
             KeyCode::Down | KeyCode::Char('j') if self.focus == FocusArea::Navigation => {
                 self.select_next()
             }
+            KeyCode::Char('k') if self.config.keymap() == KeymapPreset::Vim => {
+                self.select_previous()
+            }
+            KeyCode::Char('j') if self.config.keymap() == KeymapPreset::Vim => self.select_next(),
             KeyCode::Left | KeyCode::Char('h') => self.select_previous(),
             KeyCode::Right | KeyCode::Char('l') => self.select_next(),
             _ => {}
@@ -253,7 +266,12 @@ impl Workspace {
     /// Draws the responsive workspace shell and its registered contributions.
     pub fn render(&mut self, frame: &mut Frame<'_>) {
         let area = frame.area();
-        let layout = Self::layout(area, self.inspector_open, self.drawer_open);
+        let layout = Self::layout(
+            area,
+            self.inspector_open,
+            self.drawer_open,
+            self.config.layout(),
+        );
         self.last_layout = layout.state;
         self.normalize_focus(layout.state);
 
@@ -266,7 +284,7 @@ impl Workspace {
             .map_or("Workspace".to_owned(), |view| view.title().to_owned());
         frame.render_widget(
             Paragraph::new(format!("tuilane  /  {header_title}"))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
+                .style(self.config.theme().header_style()),
             layout.header,
         );
 
@@ -281,10 +299,15 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
 
+        let navigation_keys = if self.config.keymap() == KeymapPreset::Vim {
+            "h/l/j/k views"
+        } else {
+            "h/l views"
+        };
         frame.render_widget(
-            Paragraph::new(
-                "Tab focus  h/l views  Ctrl-P commands  i inspector  d drawer  ? help  q quit",
-            ),
+            Paragraph::new(format!(
+                "Tab focus  {navigation_keys}  Ctrl-P commands  i inspector  d drawer  ? help  q quit"
+            )),
             layout.status,
         );
 
@@ -307,16 +330,29 @@ impl Workspace {
                 } else {
                     "  "
                 };
-                Line::from(format!("{marker}{}", view.descriptor().title()))
+                let line = Line::from(format!("{marker}{}", view.descriptor().title()));
+                if Some(index) == self.selected {
+                    line.style(self.config.theme().panel_style(true))
+                } else {
+                    line
+                }
             })
             .collect::<Vec<_>>();
-        let block = Self::panel_block("Views", self.focus == FocusArea::Navigation);
+        let block = Self::panel_block(
+            "Views",
+            self.focus == FocusArea::Navigation,
+            self.config.theme(),
+        );
         frame.render_widget(Paragraph::new(items).block(block), area);
     }
 
     fn render_content(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let Some(index) = self.selected else {
-            let block = Self::panel_block("Workspace", self.focus == FocusArea::Content);
+            let block = Self::panel_block(
+                "Workspace",
+                self.focus == FocusArea::Content,
+                self.config.theme(),
+            );
             frame.render_widget(
                 Paragraph::new("No views are currently registered.")
                     .block(block)
@@ -328,14 +364,22 @@ impl Workspace {
         let Some(view) = self.views.get_mut(index) else {
             return;
         };
-        let block = Self::panel_block(view.descriptor().title(), self.focus == FocusArea::Content);
+        let block = Self::panel_block(
+            view.descriptor().title(),
+            self.focus == FocusArea::Content,
+            self.config.theme(),
+        );
         let inner = block.inner(area);
         frame.render_widget(block, area);
         view.value_mut().render(frame, inner);
     }
 
     fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        let block = Self::panel_block("Inspector", self.focus == FocusArea::Inspector);
+        let block = Self::panel_block(
+            "Inspector",
+            self.focus == FocusArea::Inspector,
+            self.config.theme(),
+        );
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let rendered = self
@@ -352,7 +396,11 @@ impl Workspace {
     }
 
     fn render_drawer(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        let block = Self::panel_block("Drawer", self.focus == FocusArea::Drawer);
+        let block = Self::panel_block(
+            "Drawer",
+            self.focus == FocusArea::Drawer,
+            self.config.theme(),
+        );
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let rendered = self
@@ -388,7 +436,7 @@ impl Workspace {
         ]);
         frame.render_widget(
             Paragraph::new(text)
-                .block(Self::panel_block("Help", true))
+                .block(Self::panel_block("Help", true, self.config.theme()))
                 .wrap(ratatui::widgets::Wrap { trim: true }),
             overlay,
         );
@@ -580,23 +628,33 @@ impl Workspace {
                 .block(Self::panel_block(
                     "Commands · Enter select · Esc close",
                     true,
+                    self.config.theme(),
                 ))
                 .wrap(ratatui::widgets::Wrap { trim: true }),
             overlay,
         );
     }
 
-    fn panel_block<'a>(title: impl Into<Line<'a>>, focused: bool) -> Block<'a> {
+    fn panel_block<'a>(title: impl Into<Line<'a>>, focused: bool, theme: ThemePreset) -> Block<'a> {
         let title = title.into();
         let title = if focused {
             Line::from(format!("{title} [focus]"))
         } else {
             title
         };
-        Block::default().borders(Borders::ALL).title(title)
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.panel_style(focused))
+            .title_style(theme.panel_style(focused))
+            .title(title)
     }
 
-    fn layout(area: Rect, inspector_open: bool, drawer_open: bool) -> ShellRects {
+    fn layout(
+        area: Rect,
+        inspector_open: bool,
+        drawer_open: bool,
+        preset: LayoutPreset,
+    ) -> ShellRects {
         let [header, body, status] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
@@ -614,7 +672,9 @@ impl Workspace {
         };
 
         let show_inspector = inspector_open && area.width >= 52;
-        let show_navigation = area.width >= 52 && (!show_inspector || area.width >= 84);
+        let show_navigation = preset != LayoutPreset::Focus
+            && area.width >= 52
+            && (!show_inspector || area.width >= 84);
         let state = ShellLayout {
             navigation: show_navigation,
             inspector: show_inspector,
@@ -764,7 +824,7 @@ mod tests {
 
     #[test]
     fn layout_hides_panels_on_small_terminals() {
-        let layout = Workspace::layout(Rect::new(0, 0, 40, 10), true, true);
+        let layout = Workspace::layout(Rect::new(0, 0, 40, 10), true, true, LayoutPreset::Balanced);
         assert!(!layout.state.navigation);
         assert!(!layout.state.inspector);
         assert!(!layout.state.drawer);
@@ -772,7 +832,8 @@ mod tests {
 
     #[test]
     fn layout_shows_optional_panels_when_space_allows() {
-        let layout = Workspace::layout(Rect::new(0, 0, 120, 36), true, true);
+        let layout =
+            Workspace::layout(Rect::new(0, 0, 120, 36), true, true, LayoutPreset::Balanced);
         assert!(layout.state.navigation);
         assert!(layout.state.inspector);
         assert!(layout.state.drawer);
@@ -780,7 +841,8 @@ mod tests {
 
     #[test]
     fn inspector_uses_the_available_width_before_navigation() {
-        let layout = Workspace::layout(Rect::new(0, 0, 60, 20), true, false);
+        let layout =
+            Workspace::layout(Rect::new(0, 0, 60, 20), true, false, LayoutPreset::Balanced);
         assert!(!layout.state.navigation);
         assert!(layout.state.inspector);
     }

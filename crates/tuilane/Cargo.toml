@@ -10,6 +10,7 @@ clap.workspace = true
 chrono.workspace = true
 directories.workspace = true
 ratatui.workspace = true
+serde.workspace = true
 tuilane-calendar.workspace = true
 tuilane-core.workspace = true
 tuilane-ideas.workspace = true
@@ -21,6 +22,7 @@ tuilane-search.workspace = true
 tuilane-storage.workspace = true
 tuilane-tasks.workspace = true
 tuilane-ui.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

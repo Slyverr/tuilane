@@ -44,6 +44,15 @@ fn run_tuilane_with_data(args: &[&str], data_directory: &Path) -> Output {
         .expect("failed to run tuilane")
 }
 
+fn run_tuilane_with_config(args: &[&str], config_path: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_tuilane"))
+        .args(args)
+        .env("TUILANE_CONFIG", config_path)
+        .stdin(Stdio::null())
+        .output()
+        .expect("failed to run tuilane")
+}
+
 #[test]
 fn no_arguments_requires_an_interactive_terminal() {
     let output = run_tuilane(&[]);
@@ -73,6 +82,49 @@ fn version_flag_displays_the_package_version() {
     assert!(output.status.success());
     assert_eq!(stdout, format!("tuilane {}\n", env!("CARGO_PKG_VERSION")));
     assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn config_check_accepts_supported_presets() {
+    let directory = TestDataDirectory::new();
+    let config_path = directory.0.join("tuilane.toml");
+    fs::write(
+        &config_path,
+        "version = 1\n\n[ui]\ntheme = 'high-contrast'\nlayout = 'focus'\nkeymap = 'vim'\n",
+    )
+    .expect("write configuration file");
+
+    let output = run_tuilane_with_config(&["config", "check"], &config_path);
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .expect("config output should be UTF-8")
+            .contains("Configuration is valid")
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn config_check_reports_invalid_values_and_unknown_fields() {
+    let directory = TestDataDirectory::new();
+    let config_path = directory.0.join("tuilane.toml");
+    fs::write(&config_path, "[ui]\ntheme = 'neon'\n").expect("write invalid configuration");
+
+    let invalid_value = run_tuilane_with_config(&["config", "check"], &config_path);
+    assert_eq!(invalid_value.status.code(), Some(1));
+    let stderr = String::from_utf8(invalid_value.stderr).expect("error output should be UTF-8");
+    assert!(stderr.contains("ui.theme"));
+    assert!(stderr.contains("neon"));
+    assert!(stderr.contains("tuilane.toml"));
+
+    fs::write(&config_path, "[ui]\nunknown = true\n").expect("write unknown configuration");
+    let unknown_field = run_tuilane_with_config(&["config", "check"], &config_path);
+    assert_eq!(unknown_field.status.code(), Some(1));
+    assert!(
+        String::from_utf8(unknown_field.stderr)
+            .expect("error output should be UTF-8")
+            .contains("unknown field")
+    );
 }
 
 #[test]

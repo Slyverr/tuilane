@@ -45,6 +45,8 @@ use tuilane_storage::SqliteDatabase;
 use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
 
+mod config;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "tuilane",
@@ -104,6 +106,11 @@ enum CliCommand {
         #[command(subcommand)]
         command: SavedSearchCliCommand,
     },
+    /// Check the optional TOML application configuration.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCliCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -127,6 +134,15 @@ enum SavedSearchCliCommand {
     Run { name: String },
     /// Delete a saved search view by name.
     Delete { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigCliCommand {
+    /// Validate a configuration file or report that built-in defaults are active.
+    Check {
+        /// Configuration file path; defaults to TUILANE_CONFIG or the platform config directory.
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -282,6 +298,7 @@ fn main() {
         Some(CliCommand::Backup { command }) => run_backup_command(command),
         Some(CliCommand::Search { query, kind, save }) => run_search_command(query, kind, save),
         Some(CliCommand::SavedSearch { command }) => run_saved_search_command(command),
+        Some(CliCommand::Config { command }) => run_config_command(command),
         None => run_workspace(),
     };
 
@@ -392,10 +409,18 @@ fn run_saved_search_command(command: SavedSearchCliCommand) -> Result<(), Box<dy
     Ok(())
 }
 
+fn run_config_command(command: ConfigCliCommand) -> Result<(), Box<dyn Error>> {
+    match command {
+        ConfigCliCommand::Check { path } => config::check_config(path)?,
+    }
+    Ok(())
+}
+
 fn run_workspace() -> Result<(), Box<dyn Error>> {
     require_interactive_terminal()?;
+    let config = config::load_workspace_config()?;
     let runtime = Runtime::open()?;
-    let mut workspace = Workspace::new();
+    let mut workspace = Workspace::with_config(config);
     workspace.register_view(TasksView::new(runtime.commands.clone()))?;
     workspace.register_view(CalendarView::new(
         Local::now().date_naive(),

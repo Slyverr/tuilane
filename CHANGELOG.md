@@ -10,6 +10,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 - Add standalone SQLite backup creation and confirmed restore commands.
 - Add CLI and TUI full-text search across tasks, projects, notes, and ideas with item-kind filtering.
 - Add persistent named search views with optional item-kind filters and CLI/TUI save and run flows.
+- Add versioned TOML configuration for built-in theme, layout, and keymap presets, with CLI validation diagnostics.
 
 ## [0.4.0] - 2026-11-13
 

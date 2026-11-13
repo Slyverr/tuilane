@@ -4,13 +4,13 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, link, backup, search, and saved-search commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, note, idea, relation, and saved-search records use SQLite and persist across process restarts.
+The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, link, backup, search, saved-search, and configuration-check commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. A versioned TOML file selects built-in shell theme, layout, and keymap presets. Task, project, note, idea, relation, and saved-search records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link/backup/search/saved-search CLI; composes Tasks, Calendar, Projects, Notes, Ideas, Links, Search, Overview, and Shortcuts views |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link/backup/search/saved-search/config-check CLI; loads shell presets and composes Tasks, Calendar, Projects, Notes, Ideas, Links, Search, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
-| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help and command-palette overlays with view-contributed actions, and managed terminal lifecycle |
+| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, built-in theme/layout/keymap presets, focus, inspector/drawer slots, help and command-palette overlays with view-contributed actions, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, transactional access, validated standalone backup creation, and guarded restore with recovery copy |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task/note types, stable item references, and typed relation/external-reference contracts |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution with command-palette quick creation, and committed change/removal events |
@@ -56,7 +56,7 @@ This diagram expresses **allowed ownership and prohibited reverse dependencies**
 
 ## Future host capabilities
 
-The following capabilities remain planned: lifecycle hooks, command schemas and caller identities, permission checks, configuration management, and external plugin loading. The current in-process dispatcher, service broker, and event bus route typed built-in contracts; they do not implement authorization, service-version negotiation, or isolation.
+The following capabilities remain planned: lifecycle hooks, command schemas and caller identities, permission checks, plugin-specific configuration management, and external plugin loading. The current in-process dispatcher, service broker, and event bus route typed built-in contracts; they do not implement authorization, service-version negotiation, or isolation.
 
 The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
 
@@ -113,7 +113,7 @@ The host owns sidebar/navigation, primary content region, contextual inspector, 
 
 ### Local data and persistence
 
-SQLite is the current local transactional store for Tasks, Projects, Notes, Ideas, and Links and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/relations. The storage adapter creates standalone SQLite backups without overwriting existing files and validates database integrity and format metadata before restoring; restore requires explicit CLI confirmation and keeps a recovery copy while SQLite applies it. Notes store bounded Markdown text; the CLI opens the user's configured editor using a private temporary file and persists content only after the editor exits successfully. The Links feature resolves item endpoints through each owner's typed service and removes incoming/outgoing relations and owned references after item-removal events. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
+SQLite is the current local transactional store for Tasks, Projects, Notes, Ideas, and Links and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/relations. The storage adapter creates standalone SQLite backups without overwriting existing files and validates database integrity and format metadata before restoring; restore requires explicit CLI confirmation and keeps a recovery copy while SQLite applies it. Notes store bounded Markdown text; the CLI opens the user's configured editor using a private temporary file and persists content only after the editor exits successfully. The Links feature resolves item endpoints through each owner's typed service and removes incoming/outgoing relations and owned references after item-removal events. The executable reads a versioned TOML configuration for host-shell presets; plugin-specific settings and filesystem attachments remain future work. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
 
 ### Optional agents and external plugins
 
