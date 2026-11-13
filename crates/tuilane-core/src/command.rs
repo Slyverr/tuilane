@@ -3,11 +3,16 @@ use std::{
     any::TypeId,
     collections::{HashMap, HashSet},
     fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use tuilane_plugin_api::{Command, CommandDescriptor, CommandEffect, CommandPermission};
 
-type ErasedHandler = Box<dyn FnMut(Box<dyn Any>) -> Result<Box<dyn Any>, CommandDispatchError>>;
+type ErasedHandler =
+    Box<dyn FnMut(Box<dyn Any>, &CommandContext) -> Result<Box<dyn Any>, CommandDispatchError>>;
 
 struct RegisteredCommandHandler {
     handler: ErasedHandler,
@@ -64,6 +69,8 @@ pub enum CommandOutcome {
     Succeeded,
     /// The handler or response contract failed.
     Failed,
+    /// Cancellation was requested while the handler was running.
+    Cancelled,
 }
 
 /// Metadata receipt for one authorized handler attempt.
@@ -139,6 +146,45 @@ impl<T> CommandExecution<T> {
     /// Consumes the execution and returns both result and optional receipt.
     pub fn into_parts(self) -> (Result<T, CommandDispatchError>, Option<CommandReceipt>) {
         (self.result, self.receipt)
+    }
+}
+
+/// A one-way cancellation request for a single dispatch.
+///
+/// Clone the token to share it with a caller that may request cancellation. Use a
+/// distinct token for each dispatch.
+#[derive(Clone, Debug, Default)]
+pub struct CommandCancellation(Arc<AtomicBool>);
+
+impl CommandCancellation {
+    /// Creates a cancellation token that has not been cancelled.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Requests cancellation. Returns `true` only for the first request.
+    pub fn cancel(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Returns whether cancellation has been requested.
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+/// Host execution controls made available to a command handler.
+#[derive(Clone, Debug)]
+pub struct CommandContext {
+    cancellation: CommandCancellation,
+}
+
+impl CommandContext {
+    /// Returns whether the caller requested that this command stop.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
     }
 }
 
@@ -219,6 +265,9 @@ pub enum CommandDispatchError {
         command: &'static str,
     },
     ReceiptSequenceExhausted,
+    Cancelled {
+        command: &'static str,
+    },
     PermissionDenied {
         command: &'static str,
         caller: CommandCallerId,
@@ -245,6 +294,7 @@ impl fmt::Display for CommandDispatchError {
             Self::ReceiptSequenceExhausted => {
                 formatter.write_str("command receipt sequence is exhausted")
             }
+            Self::Cancelled { command } => write!(formatter, "command '{command}' was cancelled"),
             Self::PermissionDenied {
                 command,
                 caller,
@@ -289,6 +339,19 @@ impl CommandDispatcher {
         F: FnMut(C) -> Result<C::Response, E> + 'static,
         E: fmt::Display,
     {
+        self.register_with_context(move |command, _context| handler(command))
+    }
+
+    /// Registers a typed handler that can observe cooperative cancellation.
+    pub fn register_with_context<C, F, E>(
+        &mut self,
+        mut handler: F,
+    ) -> Result<(), CommandRegistrationError>
+    where
+        C: Command,
+        F: FnMut(C, &CommandContext) -> Result<C::Response, E> + 'static,
+        E: fmt::Display,
+    {
         let type_id = TypeId::of::<C>();
         if self.handlers.contains_key(&type_id) {
             return Err(CommandRegistrationError::DuplicateCommand(C::NAME));
@@ -316,15 +379,16 @@ impl CommandDispatcher {
         self.handlers.insert(
             type_id,
             RegisteredCommandHandler {
-                handler: Box::new(move |command| {
+                handler: Box::new(move |command, context| {
                     let command = command
                         .downcast::<C>()
                         .map_err(|_| CommandDispatchError::HandlerTypeMismatch(C::NAME))?;
-                    let response =
-                        handler(*command).map_err(|error| CommandDispatchError::HandlerFailed {
+                    let response = handler(*command, context).map_err(|error| {
+                        CommandDispatchError::HandlerFailed {
                             command: C::NAME,
                             message: error.to_string(),
-                        })?;
+                        }
+                    })?;
                     Ok(Box::new(response))
                 }),
                 descriptors: C::DESCRIPTORS,
@@ -375,7 +439,10 @@ impl CommandDispatcher {
     /// confirmation step. It is intended only for first-party host code. External
     /// or agent callers must use [`Self::execute_as`].
     pub fn execute<C: Command>(&mut self, command: C) -> Result<C::Response, CommandDispatchError> {
-        self.execute_registered(command)
+        let context = CommandContext {
+            cancellation: CommandCancellation::new(),
+        };
+        self.execute_registered(command, &context)
     }
 
     /// Authorizes and executes a read-only command for a caller known to the host.
@@ -388,6 +455,20 @@ impl CommandDispatcher {
         caller: &CommandCallerId,
         command: C,
     ) -> CommandExecution<C::Response> {
+        let cancellation = CommandCancellation::new();
+        self.execute_as_with_cancellation(caller, command, &cancellation)
+    }
+
+    /// Authorizes and executes a read-only command with cooperative cancellation.
+    ///
+    /// A running handler must check its [`CommandContext`] and stop at safe points.
+    /// Cancellation cannot roll back side effects that a handler has already made.
+    pub fn execute_as_with_cancellation<C: Command>(
+        &mut self,
+        caller: &CommandCallerId,
+        command: C,
+        cancellation: &CommandCancellation,
+    ) -> CommandExecution<C::Response> {
         let descriptor = command.descriptor();
         if let Err(error) = self.authorize(caller, *descriptor) {
             return CommandExecution::rejected(error);
@@ -398,7 +479,7 @@ impl CommandDispatcher {
             });
         }
 
-        self.execute_with_receipt(caller, *descriptor, command)
+        self.execute_with_receipt(caller, *descriptor, command, cancellation)
     }
 
     /// Checks permission and prepares an operation for review without invoking its handler.
@@ -430,11 +511,24 @@ impl CommandDispatcher {
         &mut self,
         prepared: PreparedCommand<C>,
     ) -> CommandExecution<C::Response> {
+        let cancellation = CommandCancellation::new();
+        self.confirm_with_cancellation(prepared, &cancellation)
+    }
+
+    /// Rechecks permission and executes a confirmed command with cooperative cancellation.
+    ///
+    /// A running handler must check its [`CommandContext`] and stop at safe points.
+    /// Cancellation cannot roll back side effects that a handler has already made.
+    pub fn confirm_with_cancellation<C: Command>(
+        &mut self,
+        prepared: PreparedCommand<C>,
+        cancellation: &CommandCancellation,
+    ) -> CommandExecution<C::Response> {
         let descriptor = prepared.preview.descriptor;
         if let Err(error) = self.authorize(&prepared.caller, descriptor) {
             return CommandExecution::rejected(error);
         }
-        self.execute_with_receipt(&prepared.caller, descriptor, prepared.command)
+        self.execute_with_receipt(&prepared.caller, descriptor, prepared.command, cancellation)
     }
 
     fn authorize(
@@ -463,14 +557,33 @@ impl CommandDispatcher {
         caller: &CommandCallerId,
         descriptor: CommandDescriptor,
         command: C,
+        cancellation: &CommandCancellation,
     ) -> CommandExecution<C::Response> {
+        if cancellation.is_cancelled() {
+            return CommandExecution::rejected(CommandDispatchError::Cancelled {
+                command: descriptor.id(),
+            });
+        }
         let Some(sequence) = self.next_receipt_sequence.checked_add(1) else {
             return CommandExecution::rejected(CommandDispatchError::ReceiptSequenceExhausted);
         };
         self.next_receipt_sequence = sequence;
 
-        let result = self.execute_registered(command);
-        let outcome = if result.is_ok() {
+        let context = CommandContext {
+            cancellation: cancellation.clone(),
+        };
+        let result = self.execute_registered(command, &context);
+        let cancellation_requested = cancellation.is_cancelled();
+        let result = if cancellation_requested {
+            Err(CommandDispatchError::Cancelled {
+                command: descriptor.id(),
+            })
+        } else {
+            result
+        };
+        let outcome = if cancellation_requested {
+            CommandOutcome::Cancelled
+        } else if result.is_ok() {
             CommandOutcome::Succeeded
         } else {
             CommandOutcome::Failed
@@ -491,12 +604,13 @@ impl CommandDispatcher {
     fn execute_registered<C: Command>(
         &mut self,
         command: C,
+        context: &CommandContext,
     ) -> Result<C::Response, CommandDispatchError> {
         let handler = self
             .handlers
             .get_mut(&TypeId::of::<C>())
             .ok_or(CommandDispatchError::MissingHandler(C::NAME))?;
-        let response = (handler.handler)(Box::new(command))?;
+        let response = (handler.handler)(Box::new(command), context)?;
         response
             .downcast::<C::Response>()
             .map(|response| *response)

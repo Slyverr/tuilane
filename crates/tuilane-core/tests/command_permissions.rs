@@ -1,6 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
-use tuilane_core::{CommandCallerId, CommandDispatchError, CommandDispatcher};
+use tuilane_core::{
+    CommandCallerId, CommandCancellation, CommandDispatchError, CommandDispatcher, CommandOutcome,
+};
 use tuilane_plugin_api::{
     Command, CommandDescriptor, CommandEffect, CommandPermission,
     tasks::{TaskCommand, TaskCommandResult},
@@ -199,6 +201,73 @@ fn revoked_permission_prevents_confirmation_of_a_prepared_command() {
     ));
     assert!(receipt.is_none());
     assert!(!invoked.get());
+}
+
+#[test]
+fn cancellation_before_confirmation_prevents_handler_execution() {
+    let invoked = Rc::new(Cell::new(false));
+    let mut dispatcher = CommandDispatcher::new();
+    let handler_invoked = invoked.clone();
+    dispatcher
+        .register(move |WriteRecord(value)| {
+            handler_invoked.set(true);
+            Ok::<_, &'static str>(value)
+        })
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("cancelled".to_owned()))
+        .unwrap();
+    let cancellation = CommandCancellation::new();
+    assert!(cancellation.cancel());
+
+    let (result, receipt) = dispatcher
+        .confirm_with_cancellation(prepared, &cancellation)
+        .into_parts();
+
+    assert_eq!(
+        result,
+        Err(CommandDispatchError::Cancelled {
+            command: "records.write@1"
+        })
+    );
+    assert!(receipt.is_none());
+    assert!(!invoked.get());
+}
+
+#[test]
+fn handler_observes_cooperative_cancellation_and_returns_a_cancelled_receipt() {
+    let cancellation = CommandCancellation::new();
+    let handler_cancellation = cancellation.clone();
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register_with_context(move |WriteRecord(value), context| {
+            assert!(!context.is_cancelled());
+            assert!(handler_cancellation.cancel());
+            assert!(context.is_cancelled());
+            Ok::<_, &'static str>(value)
+        })
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("cancel during handler".to_owned()))
+        .unwrap();
+
+    let (result, receipt) = dispatcher
+        .confirm_with_cancellation(prepared, &cancellation)
+        .into_parts();
+
+    assert_eq!(
+        result,
+        Err(CommandDispatchError::Cancelled {
+            command: "records.write@1"
+        })
+    );
+    let receipt = receipt.expect("started command execution includes a receipt");
+    assert_eq!(receipt.outcome(), CommandOutcome::Cancelled);
+    assert_eq!(receipt.sequence(), 1);
 }
 
 #[test]
