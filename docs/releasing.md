@@ -85,13 +85,13 @@ Use immutable annotated tags of the form `vX.Y.Z` for stable releases:
 git tag -a v0.3.0 -m "tuilane v0.3.0"
 ```
 
-Tag the exact validated, release-ready commit reachable from `main` after any merge/squash. Do not reuse, rewrite, move, delete, or force-push a published version tag. A Git tag and a GitHub Release are distinct objects.
+Tag the exact validated, release-ready commit after it has been integrated on `main`. Do not reuse, rewrite, move, delete, or force-push a published version tag. A Git tag and a GitHub Release are distinct objects.
 
 ## 4. Release checklist
 
 Completing an authorized roadmap chapter includes preparing and tagging its target release after all checks below pass. Ordinary feature work, fixes, documentation tasks, or incomplete chapters do not authorize a release. Publishing crates.io packages or creating a GitHub Release remains a separate distribution action.
 
-1. **Scope:** Confirm the intended milestone's acceptance criteria (in `ROADMAP.md` and the active specification) or the patch's fixes; confirm required issues/PRs and user feedback are resolved.
+1. **Scope:** Confirm the intended milestone's acceptance criteria (in `ROADMAP.md` and the active specification) or the patch's fixes. Resolve applicable issues and feedback; an external-contributor PR is not required for maintainer work.
 2. **Compatibility:** Review supported APIs/CLI/serialization, migration paths, database backup/recovery, security implications, and known limitations where applicable.
 3. **Metadata:** Set intended workspace version, update `Cargo.lock`, registry-compatible workspace dependency version requirements, examples, changelog, and notes.
 4. **Validation:** Run full relevant checks from a clean checkout. At minimum, when applicable:
@@ -108,11 +108,11 @@ Completing an authorized roadmap chapter includes preparing and tagging its targ
    Add actual CLI/TUI smoke tests, restore/migration tests, packaging checks, and supported-target builds as the corresponding features exist.
 5. **Tag readiness:** Confirm `git status` is clean, the tag doesn't already exist, all release metadata agrees, and the commit is on/reachable from `main`.
 6. **Release commit:** Major/minor requires a dedicated preparation commit; patch normally does not. Validate again when version/metadata changed.
-7. **Tag and push:** Create the annotated tag for a completed chapter release. Push the branch and tag when the task authorizes GitHub submission; do not force-push or move a tag. Crates.io or GitHub Release publication requires configured permissions and explicit authorization.
+7. **Tag and push:** Create the annotated tag for a completed chapter release, then push `main` and the tag to the configured remote. Never force-push or move a tag. Crates.io or GitHub Release publication is separate and requires configured permissions and explicit authorization.
 8. **Distribution:** Only after configured publishing checks pass, publish selected Cargo packages and, where supported, attach verified binary artifacts to a GitHub Release.
 9. **Post-release:** Verify the installed package/binaries and their reported versions, link release notes, and record any follow-up issues. Published versions are immutable.
 
-Never describe checks as passing if they were not executed. Never sign or publish on behalf of the maintainer without approval or configured authority.
+Never describe checks as passing if they were not executed. Chapter delivery may push the validated `main` branch and annotated tag when authorized; crates.io and GitHub Release publication remain separate actions.
 
 ## 5. crates.io: binary and workspace dependencies
 

@@ -10,7 +10,7 @@ The initial focus is a useful, local-first task/project workspace with a composa
 - **Detailed chapter specifications:** add one for an *active or near-term* chapter only when it needs more detail. Do not create a file for every hypothetical version by default.
 - **GitHub Milestone `vX.Y.Z`:** issues/PRs for a targeted release and their actual progress. Create when that release is actively planned; no GitHub Projects board required initially.
 - **GitHub Issue:** one actionable feature, defect, or infrastructure task. Tiny edits need not become separate issues.
-- **PR/branch:** implementation and review. **Tag/Release:** exact approved shipped source.
+- **Maintainer branch:** implementation and validation, then fast-forward to `main`. **External contributor branch:** submitted through a PR. **Tag:** exact released source.
 - **`CHANGELOG.md`:** real user-facing changes, never plans.
 
 Completion is proven by implementation, user-visible behavior, and passing acceptance criteria—not by writing documents or closing an arbitrary number of issues. A maintainer explicitly authorizes release/tagging under [docs/releasing.md](docs/releasing.md).

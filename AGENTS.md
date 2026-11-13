@@ -28,7 +28,7 @@ These requirements apply to work in this repository. They supplement, not duplic
 - Inspect current Git status and branch/worktree before edits. Preserve unrelated staged and unstaged work; never reset or overwrite it to simplify your task.
 - Use short-lived task branches and Git worktrees when appropriate; no permanent `develop` branch is required. Do not create, delete, or repoint worktrees without task authorization.
 - Follow the [Conventional Commit format](CONTRIBUTING.md#commit-conventions) for commits you are authorized to create.
-- Never change Git remotes, rewrite history, force-push, publish packages, create release tags, or push changes without explicit authorization.
+- Never change Git remotes, rewrite history, or force-push. For maintainer chapter work, validate on the working branch, fast-forward to `main`, run CI, and create the chapter release commit and annotated tag when acceptance and release checks pass. Push the updated `main` branch and tag to the configured remote as part of authorized chapter delivery. External contributors use forks and PRs; crates.io and GitHub Release publication remain separate.
 - Keep committed docs and tooling self-contained: no machine-specific paths, references to private parent directories, hidden fixtures, or untracked build dependencies.
 - No credentials, personal data, or generated artifacts in commits unless explicitly required and safe to distribute.
 

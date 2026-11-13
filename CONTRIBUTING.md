@@ -7,7 +7,7 @@ tuilane is personal-first but intended to be maintainable and approachable as an
 1. Read [README.md](README.md), the relevant parts of [docs/coding-standards.md](docs/coding-standards.md), and [docs/architecture.md](docs/architecture.md) when changing architecture or public contracts.
 2. For planned functionality, check [ROADMAP.md](ROADMAP.md) and the corresponding milestone/issue. A roadmap item is not an implementation guarantee.
 3. Inspect the current implementation, tests, open work, and `git status`. Agree on scope with the maintainer for large or incompatible changes.
-4. Keep a PR focused on a coherent behavior or infrastructure improvement. Significant architectural changes should be discussed before implementation and recorded as an ADR when accepted.
+4. External contributors should keep each PR focused on one coherent behavior or infrastructure improvement. Significant architectural changes should be discussed before implementation and recorded as an ADR when accepted.
 
 ## Local development
 
@@ -27,16 +27,16 @@ Use `cargo fmt --all` to apply formatting when needed. Select targeted checks du
 
 See [docs/coding-standards.md](docs/coding-standards.md) for test placement, error handling, dependency rules, portability, and the Definition of Done.
 
-## Branches, worktrees, and pull requests
+## Branches, worktrees, and contribution paths
 
 - `main` is the integration/release branch. Prefer short-lived branches (`feat/…`, `fix/…`, `refactor/…`, `docs/…`) for significant work.
 - Git worktrees may be used to develop multiple independent branches in parallel; they remain part of **one** Git repository. A permanent `develop` branch is not required.
-- External contributors submit PRs to `main`. The maintainer may allow small direct maintenance commits when appropriate, but protected-branch rules and CI take precedence.
-- PRs should describe intent, design implications, observable changes, tests run, documentation impact, and migration/security consequences where relevant.
+- Maintainers may develop on a short-lived branch, validate the complete change, and fast-forward it directly to `main`; run CI on the updated branch and resolve failures before release.
+- External contributors work from forks and submit PRs to `main`. PRs should describe intent, design implications, observable changes, tests run, documentation impact, and migration/security consequences where relevant.
 - Keep tests and accompanying docs with the feature. Do not combine unrelated changes or force-push published tags.
-- PR merge strategy is the maintainer's choice. Preserve Conventional Commit conventions in the resulting commit history (including squash commit titles).
+- Preserve Conventional Commit conventions in the resulting commit history. Maintainers integrate completed work by fast-forwarding to `main`; fork contributors use PRs for review and integration.
 
-Use a pull request template if one is provided by the hosting platform.
+Use a pull request template for external contributor PRs when one is provided by the hosting platform.
 
 ## Commit conventions
 
@@ -111,4 +111,4 @@ Use GitHub issues for ordinary bugs and proposals; include reproduction steps, e
 
 ## Releases
 
-Only the [release policy](docs/releasing.md) defines SemVer, milestone readiness, release-preparation commits, annotated tags, and eventual crates.io/GitHub publishing. Ordinary contributor work does **not** authorize tags or releases.
+The [release policy](docs/releasing.md) defines SemVer, milestone readiness, release-preparation commits, annotated tags, and eventual crates.io/GitHub publishing. Completing an authorized roadmap chapter includes its required release commit and tag after acceptance and validation pass. External contributor work does not authorize releases or publication.
