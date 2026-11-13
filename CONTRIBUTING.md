@@ -57,7 +57,7 @@ Optional standard footer.
 - A meaningful body is recommended for substantial changes; subject-only is acceptable for trivial, self-evident commits.
 - Bullets and footers are optional; include them only when informative. Separate body, bullets, and trailers with blank lines.
 - Use the actual package name for changes primarily in one crate, e.g. `feat(tuilane-core/services): add provider discovery`. A shorter `fix(tuilane-ui): …` is also valid.
-- For shared repository changes use `repo/*`, e.g. `build(repo/workspace): align manifest metadata`, `docs(repo/roadmap): clarify v0.2.0 acceptance`.
+- For repository-wide changes omit the scope, e.g. `build: align workspace metadata`, `docs: clarify milestone acceptance`.
 - For a change spanning multiple crates, choose one meaningful shared scope. Do not invent scopes or list every touched crate.
 - Prefer one coherent logical change per commit; avoid artificial microcommits or massive unrelated commits.
 

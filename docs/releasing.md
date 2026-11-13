@@ -60,7 +60,7 @@ Future externally distributed plugins may use independent versions and compatibi
 Use a focused release-preparation commit after the milestone's implementation and tests are complete:
 
 ```text
-chore(repo/release): prepare v0.3.0
+chore: prepare v0.3.0
 
 Finalize the completed Tasks milestone for publication.
 
@@ -73,7 +73,7 @@ Only include version/metadata/changelog/release accuracy changes. Do not hide ne
 
 ### Patch release tags
 
-Prefer a **tag on the final validated fix commit** without a separate `chore(repo/release)` commit. Include the patch version and relevant changelog/metadata updates in that final commit when the release target is known. If metadata must be changed afterward, use a small ordinary metadata commit rather than rewriting published history.
+Prefer a **tag on the final validated fix commit** without a separate release commit. Include the patch version and relevant changelog/metadata updates in that final commit when the release target is known. If metadata must be changed afterward, use a small ordinary metadata commit rather than rewriting published history.
 
 A patch release is a real publication decision, not an automatic consequence of every fix.
 
