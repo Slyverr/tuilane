@@ -10,7 +10,7 @@ The repository is an eleven-member Cargo workspace. The `tuilane` executable use
 | --- | --- | --- |
 | `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link CLI; composes Tasks, Calendar, Projects, Notes, Ideas, Links, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
-| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
+| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help and command-palette overlays, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task/note types, stable item references, and typed relation/external-reference contracts |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution, and committed change/removal events |

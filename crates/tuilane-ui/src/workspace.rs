@@ -49,8 +49,25 @@ pub struct Workspace {
     inspector_open: bool,
     drawer_open: bool,
     help_open: bool,
+    palette_open: bool,
+    palette_query: String,
+    palette_selected: usize,
     should_quit: bool,
     last_layout: ShellLayout,
+}
+
+enum PaletteAction {
+    SelectView(ViewId),
+    ToggleInspector,
+    ToggleDrawer,
+    ShowHelp,
+    Quit,
+}
+
+struct PaletteEntry {
+    label: String,
+    search_text: String,
+    action: PaletteAction,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -69,6 +86,9 @@ impl Default for Workspace {
             inspector_open: false,
             drawer_open: false,
             help_open: false,
+            palette_open: false,
+            palette_query: String::new(),
+            palette_selected: 0,
             should_quit: false,
             last_layout: ShellLayout::default(),
         }
@@ -160,6 +180,11 @@ impl Workspace {
         self.help_open
     }
 
+    /// Returns whether the command palette is visible.
+    pub fn command_palette_is_open(&self) -> bool {
+        self.palette_open
+    }
+
     /// Returns whether the event loop should exit.
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -170,8 +195,17 @@ impl Workspace {
         if key.kind != KeyEventKind::Press {
             return;
         }
+        if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.toggle_command_palette();
+            return;
+        }
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.should_quit = true;
+            return;
+        }
+
+        if self.palette_open {
+            self.handle_palette_key(key);
             return;
         }
 
@@ -245,13 +279,16 @@ impl Workspace {
 
         frame.render_widget(
             Paragraph::new(
-                "Tab focus  h/l views  ↑/↓ in Views  i inspector  d drawer  ? help  q quit",
+                "Tab focus  h/l views  Ctrl-P commands  i inspector  d drawer  ? help  q quit",
             ),
             layout.status,
         );
 
         if self.help_open {
             self.render_help(frame, area);
+        }
+        if self.palette_open {
+            self.render_command_palette(frame, area);
         }
     }
 
@@ -342,11 +379,169 @@ impl Workspace {
             Line::from("h/l  Move between views; ↑/↓ when Views has focus"),
             Line::from("Tab / Shift-Tab  Move focus between visible panels"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
+            Line::from("Ctrl-P  Open the command palette"),
             Line::from("? or Esc  Close this overlay     q  Quit"),
         ]);
         frame.render_widget(
             Paragraph::new(text)
                 .block(Self::panel_block("Help", true))
+                .wrap(ratatui::widgets::Wrap { trim: true }),
+            overlay,
+        );
+    }
+
+    fn toggle_command_palette(&mut self) {
+        self.palette_open = !self.palette_open;
+        self.palette_query.clear();
+        self.palette_selected = 0;
+    }
+
+    fn handle_palette_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.palette_open = false,
+            KeyCode::Enter => self.activate_palette_selection(),
+            KeyCode::Up => self.move_palette_selection(false),
+            KeyCode::Down => self.move_palette_selection(true),
+            KeyCode::Backspace => {
+                self.palette_query.pop();
+                self.palette_selected = 0;
+            }
+            KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.palette_query.push(character);
+                self.palette_selected = 0;
+            }
+            _ => {}
+        }
+    }
+
+    fn palette_entries(&self) -> Vec<PaletteEntry> {
+        let mut entries = self
+            .views
+            .iter()
+            .map(|view| {
+                let title = view.descriptor().title();
+                let id = view.descriptor().id().clone();
+                PaletteEntry {
+                    label: format!("Go to {title}"),
+                    search_text: format!("{title} {} {}", view.descriptor().description(), id)
+                        .to_lowercase(),
+                    action: PaletteAction::SelectView(id),
+                }
+            })
+            .collect::<Vec<_>>();
+        entries.extend([
+            PaletteEntry {
+                label: "Toggle inspector".to_owned(),
+                search_text: "toggle inspector details".to_owned(),
+                action: PaletteAction::ToggleInspector,
+            },
+            PaletteEntry {
+                label: "Toggle drawer".to_owned(),
+                search_text: "toggle drawer supplemental".to_owned(),
+                action: PaletteAction::ToggleDrawer,
+            },
+            PaletteEntry {
+                label: "Show help".to_owned(),
+                search_text: "show help keyboard shortcuts".to_owned(),
+                action: PaletteAction::ShowHelp,
+            },
+            PaletteEntry {
+                label: "Quit workspace".to_owned(),
+                search_text: "quit exit workspace".to_owned(),
+                action: PaletteAction::Quit,
+            },
+        ]);
+        entries
+    }
+
+    fn filtered_palette_entries(&self) -> Vec<PaletteEntry> {
+        let query = self.palette_query.to_lowercase();
+        self.palette_entries()
+            .into_iter()
+            .filter(|entry| entry.search_text.contains(&query))
+            .collect()
+    }
+
+    fn move_palette_selection(&mut self, forward: bool) {
+        let count = self.filtered_palette_entries().len();
+        if count == 0 {
+            self.palette_selected = 0;
+        } else if forward {
+            self.palette_selected = (self.palette_selected + 1) % count;
+        } else {
+            self.palette_selected = (self.palette_selected + count - 1) % count;
+        }
+    }
+
+    fn activate_palette_selection(&mut self) {
+        let Some(entry) = self
+            .filtered_palette_entries()
+            .into_iter()
+            .nth(self.palette_selected)
+        else {
+            return;
+        };
+        self.palette_open = false;
+        match entry.action {
+            PaletteAction::SelectView(id) => {
+                self.selected = self
+                    .views
+                    .iter()
+                    .position(|view| view.descriptor().id() == &id);
+            }
+            PaletteAction::ToggleInspector => self.toggle_inspector(),
+            PaletteAction::ToggleDrawer => self.toggle_drawer(),
+            PaletteAction::ShowHelp => self.help_open = true,
+            PaletteAction::Quit => self.should_quit = true,
+        }
+    }
+
+    fn render_command_palette(&self, frame: &mut Frame<'_>, area: Rect) {
+        if area.width < 8 || area.height < 4 {
+            return;
+        }
+        let entries = self.filtered_palette_entries();
+        let visible_count = entries
+            .len()
+            .min(8)
+            .min(area.height.saturating_sub(5) as usize);
+        let width = area.width.saturating_sub(2).min(72);
+        let height = if entries.is_empty() {
+            4
+        } else {
+            visible_count as u16 + 3
+        }
+        .min(area.height.saturating_sub(2));
+        let overlay = Rect {
+            x: area.x + (area.width.saturating_sub(width)) / 2,
+            y: area.y + (area.height.saturating_sub(height)) / 2,
+            width,
+            height,
+        };
+        let mut lines = vec![Line::from(format!(" > {}", self.palette_query))];
+        if entries.is_empty() {
+            lines.push(Line::from("No matching actions"));
+        } else {
+            let start = self
+                .palette_selected
+                .saturating_sub(visible_count.saturating_sub(1));
+            for (offset, entry) in entries.iter().skip(start).take(visible_count).enumerate() {
+                let index = start + offset;
+                let marker = if index == self.palette_selected {
+                    "> "
+                } else {
+                    "  "
+                };
+                lines.push(Line::from(format!("{marker}{}", entry.label)));
+            }
+        }
+        frame.render_widget(Clear, overlay);
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .block(Self::panel_block(
+                    "Commands · Enter select · Esc close",
+                    true,
+                ))
                 .wrap(ratatui::widgets::Wrap { trim: true }),
             overlay,
         );

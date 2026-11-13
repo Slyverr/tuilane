@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views, plus CLI commands for those features. Tasks, projects, notes, ideas, and relations are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Links support directed relations, backlinks, and file/URL references between validated first-party items. Backups and loadable plugins are not implemented yet.
+The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views, plus CLI commands for those features. The shell command palette opens with `Ctrl-P` and can switch between registered views or run workspace actions. Tasks, projects, notes, ideas, and relations are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Links support directed relations, backlinks, and file/URL references between validated first-party items. Backups and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 

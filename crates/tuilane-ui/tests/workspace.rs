@@ -43,6 +43,10 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+fn control_key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::CONTROL)
+}
+
 fn workspace_with_two_views() -> Workspace {
     let mut workspace = Workspace::new();
     workspace
@@ -217,4 +221,60 @@ fn focus_returns_to_content_when_resize_hides_the_active_panel() {
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
     assert_eq!(workspace.focus(), FocusArea::Content);
+}
+
+#[test]
+fn command_palette_filters_and_switches_to_registered_views() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    assert!(workspace.command_palette_is_open());
+
+    for character in "activity".chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
+
+    assert!(!workspace.command_palette_is_open());
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    assert!(!workspace.should_quit());
+}
+
+#[test]
+fn command_palette_runs_shell_actions_and_traps_keys() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    workspace.handle_key(key(KeyCode::Char('q')));
+    assert!(!workspace.should_quit());
+    workspace.handle_key(key(KeyCode::Esc));
+    assert!(!workspace.command_palette_is_open());
+
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    workspace.handle_key(key(KeyCode::Down));
+    workspace.handle_key(key(KeyCode::Down));
+    workspace.handle_key(key(KeyCode::Enter));
+
+    assert!(!workspace.command_palette_is_open());
+    assert_eq!(workspace.focus(), FocusArea::Inspector);
+}
+
+#[test]
+fn command_palette_overlay_renders_on_compact_terminals() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    for _ in 0..5 {
+        workspace.handle_key(key(KeyCode::Down));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let text = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("Commands"));
+    assert!(text.contains("Quit workspace"));
 }

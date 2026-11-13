@@ -4,6 +4,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+- Add a keyboard command palette for switching registered views and running workspace actions.
+
 ## [0.4.0] - 2026-11-13
 
 - Add durable Projects, Markdown Notes, and Ideas workflows through the CLI and TUI.
