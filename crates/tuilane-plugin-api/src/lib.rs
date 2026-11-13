@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
+pub mod items;
 pub mod tasks;
 
 /// Typed notification published by a host or feature after a completed change.
