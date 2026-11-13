@@ -1068,7 +1068,7 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tuilane"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "clap",
@@ -1091,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "tuilane-calendar"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "crossterm",
@@ -1103,14 +1103,14 @@ dependencies = [
 
 [[package]]
 name = "tuilane-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "tuilane-plugin-api",
 ]
 
 [[package]]
 name = "tuilane-ideas"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "tuilane-links"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1137,7 +1137,7 @@ dependencies = [
 
 [[package]]
 name = "tuilane-notes"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1151,11 +1151,11 @@ dependencies = [
 
 [[package]]
 name = "tuilane-plugin-api"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "tuilane-projects"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "tuilane-search"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1182,14 +1182,14 @@ dependencies = [
 
 [[package]]
 name = "tuilane-storage"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "rusqlite",
 ]
 
 [[package]]
 name = "tuilane-tasks"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1203,7 +1203,7 @@ dependencies = [
 
 [[package]]
 name = "tuilane-ui"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "crossterm",
  "ratatui",

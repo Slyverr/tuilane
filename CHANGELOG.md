@@ -4,13 +4,11 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
-- Add a keyboard command palette for switching views, running workspace actions, and opening feature quick-create flows.
+## [0.5.0] - 2026-11-13
 
-- Add a keyboard command palette for switching registered views and running workspace actions.
-- Add standalone SQLite backup creation and confirmed restore commands.
-- Add CLI and TUI full-text search across tasks, projects, notes, and ideas with item-kind filtering.
-- Add persistent named search views with optional item-kind filters and CLI/TUI save and run flows.
-- Add versioned TOML configuration for built-in theme, layout, and keymap presets, with CLI validation diagnostics.
+- Add command-palette quick-create actions, full-text search, item-kind filters, and persistent saved search views.
+- Add standalone SQLite backup creation and confirmed restore.
+- Add versioned TOML shell presets for themes, layouts, and keymaps with CLI validation.
 
 ## [0.4.0] - 2026-11-13
 

@@ -69,7 +69,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-02/CH-03. Introduce Projects, Notes and Ideas feature crates; stable item IDs, cross-feature links, backlinks, file/URL references and Markdown via an external editor. **Verify:** create idea, attach note, link task/project, follow links, edit/rename and restart without orphaning relations. **Exclude:** full WYSIWYG and indiscriminate filesystem indexing.
 
-### CH-05 · candidate v0.5.0 — Everyday productivity
+### CH-05 · v0.5.0 — Everyday productivity
 
 **Depends:** CH-04. Inbox/quick capture, command palette, FTS search, filters, saved views, keymaps/themes/layout presets, portable exports and basic backups. **Verify:** small terminal navigation, export/restore roundtrip, invalid configuration diagnostics. **Exclude:** arbitrary layout DSL, sync and marketplace.
 
