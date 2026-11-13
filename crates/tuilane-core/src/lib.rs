@@ -7,8 +7,8 @@ mod service;
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 
 pub use command::{
-    CommandCallerId, CommandCallerIdError, CommandDispatchError, CommandDispatcher,
-    CommandRegistrationError,
+    CommandCallerId, CommandCallerIdError, CommandDispatchError, CommandDispatcher, CommandPreview,
+    CommandRegistrationError, PreparedCommand,
 };
 pub use event::{EventBus, EventSubscription};
 pub use service::{ServiceBroker, ServiceBrokerError, ServiceRegistrationError};

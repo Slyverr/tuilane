@@ -8,6 +8,7 @@ use tuilane_plugin_api::{
 
 const WRITE_PERMISSION: CommandPermission = CommandPermission::new("test.records.write");
 
+#[derive(Debug)]
 struct WriteRecord(String);
 
 impl Command for WriteRecord {
@@ -28,6 +29,7 @@ impl Command for WriteRecord {
     }
 }
 
+#[derive(Debug)]
 struct DuplicateWriteRecord;
 
 impl Command for DuplicateWriteRecord {
@@ -117,9 +119,14 @@ fn duplicate_operation_ids_are_rejected_across_command_types() {
 
 #[test]
 fn exact_grants_allow_execution_and_revocation_denies_it_again() {
+    let invoked = Rc::new(Cell::new(false));
     let mut dispatcher = CommandDispatcher::new();
+    let handler_invoked = invoked.clone();
     dispatcher
-        .register(|WriteRecord(value)| Ok::<_, &'static str>(value))
+        .register(move |WriteRecord(value)| {
+            handler_invoked.set(true);
+            Ok::<_, &'static str>(value)
+        })
         .unwrap();
     let agent = CommandCallerId::new("agent.test").unwrap();
     let unrelated_permission = CommandPermission::new("test.records.read");
@@ -131,15 +138,67 @@ fn exact_grants_allow_execution_and_revocation_denies_it_again() {
     ));
 
     dispatcher.grant_permission(&agent, WRITE_PERMISSION);
-    assert_eq!(
-        dispatcher.execute_as(&agent, WriteRecord("allowed".to_owned())),
-        Ok("allowed".to_owned())
-    );
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("allowed".to_owned()))
+        .unwrap();
+    assert_eq!(prepared.preview().descriptor().id(), "records.write@1");
+    assert!(prepared.preview().request_details().contains("allowed"));
+    assert!(!invoked.get());
+    assert!(matches!(
+        dispatcher.execute_as(&agent, WriteRecord("unconfirmed".to_owned())),
+        Err(CommandDispatchError::ConfirmationRequired { .. })
+    ));
+    assert!(!invoked.get());
+    assert_eq!(dispatcher.confirm(prepared), Ok("allowed".to_owned()));
+    assert!(invoked.get());
     assert!(dispatcher.revoke_permission(&agent, WRITE_PERMISSION));
     assert!(matches!(
         dispatcher.execute_as(&agent, WriteRecord("revoked".to_owned())),
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
+}
+
+#[test]
+fn revoked_permission_prevents_confirmation_of_a_prepared_command() {
+    let invoked = Rc::new(Cell::new(false));
+    let mut dispatcher = CommandDispatcher::new();
+    let handler_invoked = invoked.clone();
+    dispatcher
+        .register(move |WriteRecord(value)| {
+            handler_invoked.set(true);
+            Ok::<_, &'static str>(value)
+        })
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("pending".to_owned()))
+        .unwrap();
+    assert!(dispatcher.revoke_permission(&agent, WRITE_PERMISSION));
+
+    assert!(matches!(
+        dispatcher.confirm(prepared),
+        Err(CommandDispatchError::PermissionDenied { .. })
+    ));
+    assert!(!invoked.get());
+}
+
+#[test]
+fn request_preview_escapes_terminal_control_characters() {
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register(|WriteRecord(value)| Ok::<_, &'static str>(value))
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("\u{1b}[2J".to_owned()))
+        .unwrap();
+    let details = prepared.preview().request_details();
+
+    assert!(!details.contains('\u{1b}'));
+    assert!(details.contains("\\u{1b}"));
 }
 
 #[test]

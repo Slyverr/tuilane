@@ -147,7 +147,19 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
         &agent,
         tuilane_plugin_api::CommandPermission::new("tasks.write"),
     );
-    let task = match host.commands.execute_as(&agent, create).unwrap() {
+    let prepared = host.commands.preview_as(&agent, create).unwrap();
+    assert_eq!(prepared.preview().descriptor().id(), "tasks.create@1");
+    assert!(
+        tasks(
+            host.commands
+                .execute(TaskCommand::List {
+                    include_completed: true,
+                })
+                .unwrap()
+        )
+        .is_empty()
+    );
+    let task = match host.commands.confirm(prepared).unwrap() {
         TaskCommandResult::Task(task) => task,
         _ => panic!("create returns a task"),
     };
@@ -177,15 +189,26 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
         &agent,
         tuilane_plugin_api::CommandPermission::new("tasks.delete"),
     );
+    let prepared = host
+        .commands
+        .preview_as(
+            &agent,
+            TaskCommand::Delete {
+                id: task.id().clone(),
+            },
+        )
+        .unwrap();
+    assert_eq!(prepared.preview().descriptor().id(), "tasks.delete@1");
     assert!(matches!(
         host.commands
-            .execute_as(
-                &agent,
-                TaskCommand::Delete {
-                    id: task.id().clone(),
-                },
-            )
+            .execute(TaskCommand::List {
+                include_completed: true,
+            })
             .unwrap(),
+        TaskCommandResult::Tasks(ref current) if current.len() == 1
+    ));
+    assert!(matches!(
+        host.commands.confirm(prepared).unwrap(),
         TaskCommandResult::Deleted(_)
     ));
 }

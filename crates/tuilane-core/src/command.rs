@@ -5,7 +5,7 @@ use std::{
     fmt,
 };
 
-use tuilane_plugin_api::{Command, CommandDescriptor, CommandPermission};
+use tuilane_plugin_api::{Command, CommandDescriptor, CommandEffect, CommandPermission};
 
 type ErasedHandler = Box<dyn FnMut(Box<dyn Any>) -> Result<Box<dyn Any>, CommandDispatchError>>;
 
@@ -19,6 +19,41 @@ struct RegisteredCommandHandler {
 pub struct CommandDispatcher {
     handlers: HashMap<TypeId, RegisteredCommandHandler>,
     permissions: HashMap<CommandCallerId, HashSet<CommandPermission>>,
+}
+
+/// User-reviewable information for one prepared operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommandPreview {
+    descriptor: CommandDescriptor,
+    request_details: Box<str>,
+}
+
+impl CommandPreview {
+    /// Returns the operation metadata shown during review.
+    pub const fn descriptor(&self) -> CommandDescriptor {
+        self.descriptor
+    }
+
+    /// Returns an escaped debug representation of the exact typed request.
+    ///
+    /// This is for local review only and is not a stable serialization format.
+    pub fn request_details(&self) -> &str {
+        &self.request_details
+    }
+}
+
+/// A permission-checked command that has not executed and can be explicitly confirmed.
+pub struct PreparedCommand<C: Command> {
+    caller: CommandCallerId,
+    command: C,
+    preview: CommandPreview,
+}
+
+impl<C: Command> PreparedCommand<C> {
+    /// Returns the preview associated with this exact, unmodified request.
+    pub fn preview(&self) -> &CommandPreview {
+        &self.preview
+    }
 }
 
 /// Identity assigned by trusted host code to a command caller.
@@ -94,6 +129,9 @@ impl std::error::Error for CommandRegistrationError {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommandDispatchError {
     MissingHandler(&'static str),
+    ConfirmationRequired {
+        command: &'static str,
+    },
     PermissionDenied {
         command: &'static str,
         caller: CommandCallerId,
@@ -113,6 +151,10 @@ impl fmt::Display for CommandDispatchError {
             Self::MissingHandler(command) => {
                 write!(formatter, "command handler '{command}' is unavailable")
             }
+            Self::ConfirmationRequired { command } => write!(
+                formatter,
+                "command '{command}' requires preview and explicit confirmation"
+            ),
             Self::PermissionDenied {
                 command,
                 caller,
@@ -239,36 +281,86 @@ impl CommandDispatcher {
 
     /// Executes a command through its registered host handler.
     ///
-    /// This trusted in-process entry point is intended for first-party host code.
-    /// External or agent callers must use [`Self::execute_as`].
+    /// This trusted in-process entry point bypasses caller permissions and the
+    /// confirmation step. It is intended only for first-party host code. External
+    /// or agent callers must use [`Self::execute_as`].
     pub fn execute<C: Command>(&mut self, command: C) -> Result<C::Response, CommandDispatchError> {
         self.execute_registered(command)
     }
 
-    /// Authorizes and executes a command for a caller known to the host.
+    /// Authorizes and executes a read-only command for a caller known to the host.
     ///
     /// The caller identity must be assigned by trusted host code and must not be
-    /// copied from untrusted command input.
+    /// copied from untrusted command input. Mutating commands require
+    /// [`Self::preview_as`] followed by [`Self::confirm`].
     pub fn execute_as<C: Command>(
         &mut self,
         caller: &CommandCallerId,
         command: C,
     ) -> Result<C::Response, CommandDispatchError> {
         let descriptor = command.descriptor();
+        self.authorize(caller, *descriptor)?;
+        if descriptor.effect() != CommandEffect::ReadOnly {
+            return Err(CommandDispatchError::ConfirmationRequired {
+                command: descriptor.id(),
+            });
+        }
+
+        self.execute_registered(command)
+    }
+
+    /// Checks permission and prepares an operation for review without invoking its handler.
+    ///
+    /// The host must present [`PreparedCommand::preview`] to its trusted
+    /// confirmation flow before calling [`Self::confirm`].
+    pub fn preview_as<C: Command>(
+        &self,
+        caller: &CommandCallerId,
+        command: C,
+    ) -> Result<PreparedCommand<C>, CommandDispatchError> {
+        let descriptor = *command.descriptor();
+        self.authorize(caller, descriptor)?;
+        let preview = CommandPreview {
+            descriptor,
+            request_details: sanitized_debug(&command).into(),
+        };
+        Ok(PreparedCommand {
+            caller: caller.clone(),
+            command,
+            preview,
+        })
+    }
+
+    /// Rechecks permission and executes the exact command returned by [`Self::preview_as`].
+    ///
+    /// Call this only after the host's confirmation flow accepts the preview.
+    pub fn confirm<C: Command>(
+        &mut self,
+        prepared: PreparedCommand<C>,
+    ) -> Result<C::Response, CommandDispatchError> {
+        self.authorize(&prepared.caller, prepared.preview.descriptor)?;
+        self.execute_registered(prepared.command)
+    }
+
+    fn authorize(
+        &self,
+        caller: &CommandCallerId,
+        descriptor: CommandDescriptor,
+    ) -> Result<(), CommandDispatchError> {
         let permission = descriptor.required_permission();
         let permitted = self
             .permissions
             .get(caller)
             .is_some_and(|permissions| permissions.contains(&permission));
-        if !permitted {
-            return Err(CommandDispatchError::PermissionDenied {
+        if permitted {
+            Ok(())
+        } else {
+            Err(CommandDispatchError::PermissionDenied {
                 command: descriptor.id(),
                 caller: caller.clone(),
                 permission,
-            });
+            })
         }
-
-        self.execute_registered(command)
     }
 
     fn execute_registered<C: Command>(
@@ -297,10 +389,26 @@ impl CommandDispatcher {
     }
 }
 
+fn sanitized_debug<C: Command>(command: &C) -> String {
+    use std::fmt::Write as _;
+
+    let details = format!("{command:#?}");
+    let mut sanitized = String::with_capacity(details.len());
+    for character in details.chars() {
+        if character.is_control() && !matches!(character, '\n' | '\t') {
+            let _ = write!(sanitized, "\\u{{{:x}}}", character as u32);
+        } else {
+            sanitized.push(character);
+        }
+    }
+    sanitized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
     struct Echo(String);
 
     const ECHO_WRITE: CommandPermission = CommandPermission::new("test.echo.write");

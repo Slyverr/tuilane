@@ -56,7 +56,11 @@ pub trait ServiceRequest: 'static {
 }
 
 /// Typed command sent through the host's shared command dispatcher.
-pub trait Command: 'static {
+///
+/// Its `Debug` representation is included in local command previews after control
+/// characters are escaped. Do not store secrets or private implementation state
+/// in a command value.
+pub trait Command: fmt::Debug + 'static {
     /// The typed response returned by the command provider.
     type Response: 'static;
 
