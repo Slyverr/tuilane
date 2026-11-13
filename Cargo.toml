@@ -45,7 +45,7 @@ features = ["crossterm"]
 [workspace.dependencies.rusqlite]
 version = "0.42.0"
 default-features = false
-features = ["bundled"]
+features = ["backup", "bundled"]
 
 [workspace.dependencies.tuilane-core]
 path = "crates/tuilane-core"
