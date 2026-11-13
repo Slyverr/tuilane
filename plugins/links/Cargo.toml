@@ -1,0 +1,18 @@
+[package]
+name = "tuilane-links"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "First-party linked-item and external-reference feature for tuilane"
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+rusqlite.workspace = true
+tuilane-core.workspace = true
+tuilane-plugin-api.workspace = true
+tuilane-storage.workspace = true
+tuilane-ui.workspace = true
+
+[lints]
+workspace = true
