@@ -56,9 +56,10 @@ impl ExternalReference {
     fn new(kind: ExternalReferenceKind, value: &str) -> Result<Self, ExternalReferenceError> {
         if value.is_empty()
             || value.chars().count() > 2048
-            || value
-                .chars()
-                .any(|character| character.is_control() || character.is_whitespace())
+            || value.chars().any(|character| {
+                character.is_control()
+                    || (kind == ExternalReferenceKind::Url && character.is_whitespace())
+            })
         {
             return Err(ExternalReferenceError);
         }
@@ -85,8 +86,9 @@ pub struct ExternalReferenceError;
 
 impl fmt::Display for ExternalReferenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .write_str("references must be a nonempty path or an HTTP(S) URL with no whitespace")
+        formatter.write_str(
+            "file paths must be nonempty and contain no controls; HTTP(S) URLs must also contain a host and no whitespace",
+        )
     }
 }
 
@@ -207,6 +209,7 @@ mod tests {
         let file = ExternalReference::file("notes/research.md").unwrap();
         assert_eq!(file.kind(), ExternalReferenceKind::File);
         assert_eq!(file.value(), "notes/research.md");
+        assert!(ExternalReference::file("notes/meeting notes.md").is_ok());
 
         assert!(ExternalReference::url("ftp://example.org").is_err());
         assert!(ExternalReference::url("https:///path").is_err());
