@@ -19,6 +19,7 @@ struct RegisteredCommandHandler {
 pub struct CommandDispatcher {
     handlers: HashMap<TypeId, RegisteredCommandHandler>,
     permissions: HashMap<CommandCallerId, HashSet<CommandPermission>>,
+    next_receipt_sequence: u64,
 }
 
 /// User-reviewable information for one prepared operation.
@@ -53,6 +54,91 @@ impl<C: Command> PreparedCommand<C> {
     /// Returns the preview associated with this exact, unmodified request.
     pub fn preview(&self) -> &CommandPreview {
         &self.preview
+    }
+}
+
+/// Outcome of an authorized command handler attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandOutcome {
+    /// The registered command handler returned successfully.
+    Succeeded,
+    /// The handler or response contract failed.
+    Failed,
+}
+
+/// Metadata receipt for one authorized handler attempt.
+///
+/// Receipts contain no request or response payload. Sequence numbers are unique
+/// only within one dispatcher instance and are not persisted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommandReceipt {
+    sequence: u64,
+    caller: CommandCallerId,
+    command_id: &'static str,
+    effect: CommandEffect,
+    outcome: CommandOutcome,
+}
+
+impl CommandReceipt {
+    /// Returns the receipt sequence within its dispatcher instance.
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    /// Returns the caller assigned by the host.
+    pub fn caller(&self) -> &CommandCallerId {
+        &self.caller
+    }
+
+    /// Returns the stable operation identifier.
+    pub const fn command_id(&self) -> &'static str {
+        self.command_id
+    }
+
+    /// Returns the declared operation effect.
+    pub const fn effect(&self) -> CommandEffect {
+        self.effect
+    }
+
+    /// Returns whether the handler completed successfully.
+    pub const fn outcome(&self) -> CommandOutcome {
+        self.outcome
+    }
+}
+
+/// Result and optional receipt for an explicit caller execution attempt.
+#[derive(Debug)]
+pub struct CommandExecution<T> {
+    result: Result<T, CommandDispatchError>,
+    receipt: Option<CommandReceipt>,
+}
+
+impl<T> CommandExecution<T> {
+    fn rejected(error: CommandDispatchError) -> Self {
+        Self {
+            result: Err(error),
+            receipt: None,
+        }
+    }
+
+    /// Returns the handler result by reference.
+    pub fn result(&self) -> Result<&T, &CommandDispatchError> {
+        self.result.as_ref()
+    }
+
+    /// Returns the receipt when an authorized handler attempt occurred.
+    pub fn receipt(&self) -> Option<&CommandReceipt> {
+        self.receipt.as_ref()
+    }
+
+    /// Consumes the execution and returns its result, discarding any receipt.
+    pub fn into_result(self) -> Result<T, CommandDispatchError> {
+        self.result
+    }
+
+    /// Consumes the execution and returns both result and optional receipt.
+    pub fn into_parts(self) -> (Result<T, CommandDispatchError>, Option<CommandReceipt>) {
+        (self.result, self.receipt)
     }
 }
 
@@ -132,6 +218,7 @@ pub enum CommandDispatchError {
     ConfirmationRequired {
         command: &'static str,
     },
+    ReceiptSequenceExhausted,
     PermissionDenied {
         command: &'static str,
         caller: CommandCallerId,
@@ -155,6 +242,9 @@ impl fmt::Display for CommandDispatchError {
                 formatter,
                 "command '{command}' requires preview and explicit confirmation"
             ),
+            Self::ReceiptSequenceExhausted => {
+                formatter.write_str("command receipt sequence is exhausted")
+            }
             Self::PermissionDenied {
                 command,
                 caller,
@@ -297,16 +387,18 @@ impl CommandDispatcher {
         &mut self,
         caller: &CommandCallerId,
         command: C,
-    ) -> Result<C::Response, CommandDispatchError> {
+    ) -> CommandExecution<C::Response> {
         let descriptor = command.descriptor();
-        self.authorize(caller, *descriptor)?;
+        if let Err(error) = self.authorize(caller, *descriptor) {
+            return CommandExecution::rejected(error);
+        }
         if descriptor.effect() != CommandEffect::ReadOnly {
-            return Err(CommandDispatchError::ConfirmationRequired {
+            return CommandExecution::rejected(CommandDispatchError::ConfirmationRequired {
                 command: descriptor.id(),
             });
         }
 
-        self.execute_registered(command)
+        self.execute_with_receipt(caller, *descriptor, command)
     }
 
     /// Checks permission and prepares an operation for review without invoking its handler.
@@ -337,9 +429,12 @@ impl CommandDispatcher {
     pub fn confirm<C: Command>(
         &mut self,
         prepared: PreparedCommand<C>,
-    ) -> Result<C::Response, CommandDispatchError> {
-        self.authorize(&prepared.caller, prepared.preview.descriptor)?;
-        self.execute_registered(prepared.command)
+    ) -> CommandExecution<C::Response> {
+        let descriptor = prepared.preview.descriptor;
+        if let Err(error) = self.authorize(&prepared.caller, descriptor) {
+            return CommandExecution::rejected(error);
+        }
+        self.execute_with_receipt(&prepared.caller, descriptor, prepared.command)
     }
 
     fn authorize(
@@ -360,6 +455,36 @@ impl CommandDispatcher {
                 caller: caller.clone(),
                 permission,
             })
+        }
+    }
+
+    fn execute_with_receipt<C: Command>(
+        &mut self,
+        caller: &CommandCallerId,
+        descriptor: CommandDescriptor,
+        command: C,
+    ) -> CommandExecution<C::Response> {
+        let Some(sequence) = self.next_receipt_sequence.checked_add(1) else {
+            return CommandExecution::rejected(CommandDispatchError::ReceiptSequenceExhausted);
+        };
+        self.next_receipt_sequence = sequence;
+
+        let result = self.execute_registered(command);
+        let outcome = if result.is_ok() {
+            CommandOutcome::Succeeded
+        } else {
+            CommandOutcome::Failed
+        };
+        let receipt = CommandReceipt {
+            sequence,
+            caller: caller.clone(),
+            command_id: descriptor.id(),
+            effect: descriptor.effect(),
+            outcome,
+        };
+        CommandExecution {
+            result,
+            receipt: Some(receipt),
         }
     }
 

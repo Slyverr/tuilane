@@ -63,7 +63,9 @@ fn denied_caller_does_not_reach_the_command_handler() {
         .unwrap();
     let agent = CommandCallerId::new("agent.test").unwrap();
 
-    let result = dispatcher.execute_as(&agent, WriteRecord("blocked".to_owned()));
+    let (result, receipt) = dispatcher
+        .execute_as(&agent, WriteRecord("blocked".to_owned()))
+        .into_parts();
 
     assert_eq!(
         result,
@@ -73,6 +75,7 @@ fn denied_caller_does_not_reach_the_command_handler() {
             permission: WRITE_PERMISSION,
         })
     );
+    assert!(receipt.is_none());
     assert!(!invoked.get());
 }
 
@@ -133,7 +136,9 @@ fn exact_grants_allow_execution_and_revocation_denies_it_again() {
     dispatcher.grant_permission(&agent, unrelated_permission);
 
     assert!(matches!(
-        dispatcher.execute_as(&agent, WriteRecord("denied".to_owned())),
+        dispatcher
+            .execute_as(&agent, WriteRecord("denied".to_owned()))
+            .into_result(),
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
 
@@ -145,15 +150,26 @@ fn exact_grants_allow_execution_and_revocation_denies_it_again() {
     assert!(prepared.preview().request_details().contains("allowed"));
     assert!(!invoked.get());
     assert!(matches!(
-        dispatcher.execute_as(&agent, WriteRecord("unconfirmed".to_owned())),
+        dispatcher
+            .execute_as(&agent, WriteRecord("unconfirmed".to_owned()))
+            .into_result(),
         Err(CommandDispatchError::ConfirmationRequired { .. })
     ));
     assert!(!invoked.get());
-    assert_eq!(dispatcher.confirm(prepared), Ok("allowed".to_owned()));
+    let (result, receipt) = dispatcher.confirm(prepared).into_parts();
+    assert_eq!(result, Ok("allowed".to_owned()));
+    let receipt = receipt.expect("authorized handler attempts include a receipt");
+    assert_eq!(receipt.sequence(), 1);
+    assert_eq!(receipt.caller(), &agent);
+    assert_eq!(receipt.command_id(), "records.write@1");
+    assert_eq!(receipt.effect(), CommandEffect::Mutating);
+    assert_eq!(receipt.outcome(), tuilane_core::CommandOutcome::Succeeded);
     assert!(invoked.get());
     assert!(dispatcher.revoke_permission(&agent, WRITE_PERMISSION));
     assert!(matches!(
-        dispatcher.execute_as(&agent, WriteRecord("revoked".to_owned())),
+        dispatcher
+            .execute_as(&agent, WriteRecord("revoked".to_owned()))
+            .into_result(),
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
 }
@@ -176,11 +192,37 @@ fn revoked_permission_prevents_confirmation_of_a_prepared_command() {
         .unwrap();
     assert!(dispatcher.revoke_permission(&agent, WRITE_PERMISSION));
 
+    let (result, receipt) = dispatcher.confirm(prepared).into_parts();
     assert!(matches!(
-        dispatcher.confirm(prepared),
+        result,
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
+    assert!(receipt.is_none());
     assert!(!invoked.get());
+}
+
+#[test]
+fn handler_failure_returns_a_failed_receipt_without_error_payloads() {
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register(|_: WriteRecord| Err::<String, _>("private storage detail"))
+        .unwrap();
+    let agent = CommandCallerId::new("agent.test").unwrap();
+    dispatcher.grant_permission(&agent, WRITE_PERMISSION);
+    let prepared = dispatcher
+        .preview_as(&agent, WriteRecord("value".to_owned()))
+        .unwrap();
+
+    let (result, receipt) = dispatcher.confirm(prepared).into_parts();
+
+    assert!(matches!(
+        result,
+        Err(CommandDispatchError::HandlerFailed { ref message, .. })
+            if message == "private storage detail"
+    ));
+    let receipt = receipt.expect("handler attempts include a receipt");
+    assert_eq!(receipt.outcome(), tuilane_core::CommandOutcome::Failed);
+    assert_eq!(receipt.command_id(), "records.write@1");
 }
 
 #[test]

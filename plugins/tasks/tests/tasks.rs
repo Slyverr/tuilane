@@ -129,7 +129,9 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
     };
 
     assert!(matches!(
-        host.commands.execute_as(&agent, create.clone()),
+        host.commands
+            .execute_as(&agent, create.clone())
+            .into_result(),
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
     assert!(
@@ -159,18 +161,46 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
         )
         .is_empty()
     );
-    let task = match host.commands.confirm(prepared).unwrap() {
+    let (creation_result, creation_receipt) = host.commands.confirm(prepared).into_parts();
+    let task = match creation_result.unwrap() {
         TaskCommandResult::Task(task) => task,
         _ => panic!("create returns a task"),
     };
+    let creation_receipt = creation_receipt.expect("authorized task creation includes a receipt");
+    assert_eq!(creation_receipt.caller(), &agent);
+    assert_eq!(creation_receipt.command_id(), "tasks.create@1");
+    assert_eq!(
+        creation_receipt.outcome(),
+        tuilane_core::CommandOutcome::Succeeded
+    );
+
+    host.commands.grant_permission(
+        &agent,
+        tuilane_plugin_api::CommandPermission::new("tasks.read"),
+    );
+    let (read_result, read_receipt) = host
+        .commands
+        .execute_as(
+            &agent,
+            TaskCommand::List {
+                include_completed: true,
+            },
+        )
+        .into_parts();
+    assert_eq!(tasks(read_result.unwrap()).len(), 1);
+    let read_receipt = read_receipt.expect("authorized task read includes a receipt");
+    assert_eq!(read_receipt.command_id(), "tasks.list@1");
+    assert_eq!(read_receipt.sequence(), 2);
 
     assert!(matches!(
-        host.commands.execute_as(
-            &agent,
-            TaskCommand::Delete {
-                id: task.id().clone(),
-            },
-        ),
+        host.commands
+            .execute_as(
+                &agent,
+                TaskCommand::Delete {
+                    id: task.id().clone(),
+                },
+            )
+            .into_result(),
         Err(CommandDispatchError::PermissionDenied { .. })
     ));
     assert_eq!(
@@ -207,10 +237,14 @@ fn untrusted_callers_need_separate_task_write_and_delete_grants() {
             .unwrap(),
         TaskCommandResult::Tasks(ref current) if current.len() == 1
     ));
+    let (deletion_result, deletion_receipt) = host.commands.confirm(prepared).into_parts();
     assert!(matches!(
-        host.commands.confirm(prepared).unwrap(),
+        deletion_result.unwrap(),
         TaskCommandResult::Deleted(_)
     ));
+    let deletion_receipt = deletion_receipt.expect("authorized deletion includes a receipt");
+    assert_eq!(deletion_receipt.command_id(), "tasks.delete@1");
+    assert_eq!(deletion_receipt.sequence(), 3);
 }
 
 #[test]
