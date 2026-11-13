@@ -1111,10 +1111,13 @@ dependencies = [
 name = "tuilane-search"
 version = "0.1.0"
 dependencies = [
+ "crossterm",
+ "ratatui",
  "rusqlite",
  "tuilane-core",
  "tuilane-plugin-api",
  "tuilane-storage",
+ "tuilane-ui",
 ]
 
 [[package]]

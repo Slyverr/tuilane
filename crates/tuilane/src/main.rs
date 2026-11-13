@@ -37,7 +37,7 @@ use tuilane_plugin_api::tasks::{
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
-use tuilane_search::SearchPlugin;
+use tuilane_search::{SearchPlugin, SearchView};
 use tuilane_storage::SqliteDatabase;
 use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
@@ -317,6 +317,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     workspace.register_view(NotesView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(IdeasView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(LinksView::new(runtime.commands.clone(), &runtime.events))?;
+    workspace.register_view(SearchView::new(runtime.commands.clone()))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -876,7 +877,7 @@ impl View for ShortcutsView {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(
             Paragraph::new(
-                "Tab / Shift-Tab     Move focus\nh/l                 Select a registered view\n↑/↓ in Views panel  Select a registered view\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
+                "Tab / Shift-Tab     Move focus\nh/l                 Select a registered view\nCtrl-P              Open command palette\n/ in Search         Search items\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
             ),
             area,
         );

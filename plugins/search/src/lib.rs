@@ -1,5 +1,9 @@
 //! Host-mediated full-text search across first-party workspace items.
 
+mod view;
+
+pub use view::SearchView;
+
 use std::{cell::RefCell, error::Error, fmt, rc::Rc};
 
 use rusqlite::params;

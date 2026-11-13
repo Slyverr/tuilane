@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{Terminal, backend::TestBackend};
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_plugin_api::{
     items::{ItemRef, ItemSummary, SearchDocument},
@@ -10,7 +12,9 @@ use tuilane_plugin_api::{
     },
 };
 use tuilane_search::SearchPlugin;
+use tuilane_search::SearchView;
 use tuilane_storage::SqliteDatabase;
+use tuilane_ui::{FocusArea, Workspace};
 
 fn document(kind: &str, id: &str, title: &str, content: &str) -> SearchDocument {
     SearchDocument::new(
@@ -152,4 +156,49 @@ fn punctuation_only_queries_return_no_matches_without_fts_errors() {
 
     let SearchCommandResult::Results(results) = commands.execute(search_command("! ? *")).unwrap();
     assert!(results.is_empty());
+}
+
+#[test]
+fn search_view_routes_queries_and_inspects_the_selected_result() {
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register(move |command: SearchCommand| {
+            assert_eq!(command.query().as_str(), "signal");
+            Ok::<_, &'static str>(SearchCommandResult::Results(vec![
+                tuilane_plugin_api::search::SearchResult::new(
+                    ItemSummary::new(ItemRef::new("note", "note-1").unwrap(), "Signal processing")
+                        .unwrap(),
+                    "A [signal] found in the sample",
+                ),
+            ]))
+        })
+        .unwrap();
+    let commands = Rc::new(RefCell::new(dispatcher));
+    let mut workspace = Workspace::new();
+    workspace.register_view(SearchView::new(commands)).unwrap();
+
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+    for character in "signal".chars() {
+        workspace.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+    workspace.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    workspace.toggle_inspector();
+    assert_eq!(workspace.focus(), FocusArea::Inspector);
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let output = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(output.contains("Query: signal"), "{output}");
+    assert!(output.contains("Signal processing"), "{output}");
+    assert!(output.contains("A [signal] found in the"), "{output}");
+    assert!(output.contains("sample"), "{output}");
 }
