@@ -1,3 +1,7 @@
-//! Reserved for tuilane's terminal interface.
-//!
-//! No terminal UI behavior is implemented yet.
+//! Terminal lifecycle, layout, navigation, and rendering for the tuilane workspace.
+
+mod view;
+mod workspace;
+
+pub use view::View;
+pub use workspace::{FocusArea, Workspace, WorkspaceError, require_interactive_terminal, run};

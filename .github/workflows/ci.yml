@@ -64,8 +64,6 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Run tests
         run: cargo test --workspace
-      - name: Check greeting output
-        run: test "$(cargo run -q -p tuilane)" = "Hello, tuilane!"
       - name: Check CLI help
         run: cargo run -p tuilane -- --help
       - name: Check CLI version

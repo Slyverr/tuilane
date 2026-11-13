@@ -17,7 +17,7 @@ Completion is proven by implementation, user-visible behavior, and passing accep
 
 ## Current state and naming
 
-The supplied repository documentation describes a five-crate **bootstrap scaffold** with a CLI placeholder; the actual current source, tags, and CI must be inspected before assessing completion. The first milestone's target is `v0.1.0`, **unless that version has already been released**. Never move/reuse an existing tag; adjust future version targets if necessary.
+The current baseline is a five-crate workspace with a composable terminal shell in early development. Inspect source, tests, CI, and tags before assessing milestone completion. The first milestone's target is `v0.1.0`, **unless that version has already been released**. Never move/reuse an existing tag; adjust future version targets if necessary.
 
 Legacy prototype behavior or data should only be ported through tracked, validated tasks after the relevant source/fixtures are available in the repository. Do not depend on private or untracked source locations.
 

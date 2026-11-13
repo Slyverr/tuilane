@@ -4,13 +4,13 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a virtual five-crate Cargo workspace. The `tuilane` executable uses Clap for `--help` and `--version`; its default response is still a placeholder. The four supporting crates currently contain module documentation only, with no substantive runtime behavior or plugin contracts.
+The repository is a five-crate Cargo workspace. The `tuilane` executable uses Clap for `--help` and `--version`, composes two example views, and starts the terminal shell when run interactively. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version; placeholder default response |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version; registers Overview and Shortcuts example views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered generic view registry with duplicate rejection and removal; other kernel services are planned |
-| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Module documentation only; behavior planned |
+| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | Module documentation only; behavior planned |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | Validated view identifiers and display metadata; service and command contracts are planned |
 | `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
@@ -47,7 +47,9 @@ pluginA -/-> pluginB internals (use public host services)
 
 This diagram expresses **allowed ownership and prohibited reverse dependencies**, not a precise manifest dependency graph. Concrete adapters may depend on core ports as justified; no dependency cycle is allowed. Document exceptions before introduction.
 
-## Intended host architecture (not yet implemented)
+## Future host capabilities
+
+The following capabilities remain planned: lifecycle hooks, command/query dispatch, service discovery and calls, event delivery, permission checks, configuration management, and external plugin loading. Do not infer their availability from the view registry or UI shell.
 
 The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
 

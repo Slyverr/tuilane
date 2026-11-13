@@ -18,15 +18,16 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The project is currently building its foundation. The interactive workspace, persistence, feature plugins, and external plugin system are planned capabilities rather than completed releases.
+The current build includes a minimal interactive shell with two example views, host-managed view registration and removal, keyboard navigation, focus handling, a help overlay, and responsive inspector and drawer slots. Task and project management, persistent storage, and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 
 ## Getting started
 
-For the current development scaffold, use a compatible Rust toolchain and run:
+Use a compatible Rust toolchain and run the workspace in an interactive terminal:
 
 ```sh
+cargo run -p tuilane
 cargo run -p tuilane -- --help
 cargo run -p tuilane -- --version
 ```

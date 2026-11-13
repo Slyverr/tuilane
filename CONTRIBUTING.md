@@ -18,6 +18,7 @@ cargo fmt --all -- --check
 cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo run -p tuilane
 cargo run -p tuilane -- --help
 cargo run -p tuilane -- --version
 ```

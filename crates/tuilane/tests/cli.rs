@@ -1,19 +1,21 @@
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn run_tuilane(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_tuilane"))
         .args(args)
+        .stdin(Stdio::null())
         .output()
         .expect("failed to run tuilane")
 }
 
 #[test]
-fn no_arguments_prints_the_placeholder_greeting() {
+fn no_arguments_requires_an_interactive_terminal() {
     let output = run_tuilane(&[]);
+    let stderr = String::from_utf8(output.stderr).expect("error output should be UTF-8");
 
-    assert!(output.status.success());
-    assert_eq!(output.stdout, b"Hello, tuilane!\n");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains("an interactive terminal is required"));
 }
 
 #[test]

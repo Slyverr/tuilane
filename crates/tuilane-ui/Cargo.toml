@@ -5,5 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "Terminal interface crate for tuilane"
 
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+tuilane-core.workspace = true
+tuilane-plugin-api.workspace = true
+
 [lints]
 workspace = true

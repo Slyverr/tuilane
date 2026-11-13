@@ -7,6 +7,9 @@ description = "A local-first, modular, plugin-driven terminal workspace"
 
 [dependencies]
 clap.workspace = true
+ratatui.workspace = true
+tuilane-plugin-api.workspace = true
+tuilane-ui.workspace = true
 
 [lints]
 workspace = true
