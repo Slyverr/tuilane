@@ -1,13 +1,20 @@
-use std::{error::Error, process};
+use std::{cell::RefCell, error::Error, io, path::PathBuf, process, rc::Rc};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use directories::ProjectDirs;
 use ratatui::{
     Frame,
     layout::Rect,
     widgets::{Paragraph, Wrap},
 };
+use tuilane_core::{CommandDispatcher, ServiceBroker};
+use tuilane_plugin_api::tasks::{
+    Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
+};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{View, Workspace};
+use tuilane_storage::SqliteDatabase;
+use tuilane_tasks::{TasksPlugin, TasksView};
+use tuilane_ui::{View, Workspace, require_interactive_terminal};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -15,23 +22,190 @@ use tuilane_ui::{View, Workspace};
     version,
     about = "A local-first, modular, plugin-driven terminal workspace"
 )]
-struct Cli;
+struct Cli {
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    /// Manage local tasks.
+    Task {
+        #[command(subcommand)]
+        command: TaskCliCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TaskCliCommand {
+    /// List open tasks, or all tasks with --all.
+    List {
+        /// Include completed tasks.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Create a task.
+    Create {
+        /// Task title.
+        #[arg(long)]
+        title: String,
+        /// Due date in YYYY-MM-DD format.
+        #[arg(long)]
+        due: Option<String>,
+    },
+    /// Show one task.
+    Show { id: String },
+    /// Update one task title or due date.
+    Update {
+        id: String,
+        /// Replace the task title.
+        #[arg(long, conflicts_with_all = ["due", "clear_due"])]
+        title: Option<String>,
+        /// Set the due date in YYYY-MM-DD format.
+        #[arg(long, conflicts_with = "clear_due")]
+        due: Option<String>,
+        /// Remove the current due date.
+        #[arg(long, conflicts_with_all = ["title", "due"])]
+        clear_due: bool,
+    },
+    /// Mark a task complete.
+    Complete { id: String },
+    /// Reopen a completed task.
+    Reopen { id: String },
+    /// Delete a task.
+    Delete { id: String },
+}
 
 fn main() {
-    let _ = Cli::parse();
+    let cli = Cli::parse();
 
-    if let Err(error) = run_workspace() {
+    let result = match cli.command {
+        Some(CliCommand::Task { command }) => run_task_command(command),
+        None => run_workspace(),
+    };
+
+    if let Err(error) = result {
         eprintln!("tuilane: {error}");
         process::exit(1);
     }
 }
 
 fn run_workspace() -> Result<(), Box<dyn Error>> {
+    require_interactive_terminal()?;
+    let runtime = Runtime::open()?;
     let mut workspace = Workspace::new();
+    workspace.register_view(TasksView::new(runtime.commands.clone()))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
     Ok(())
+}
+
+fn run_task_command(command: TaskCliCommand) -> Result<(), Box<dyn Error>> {
+    let command = match command {
+        TaskCliCommand::List { all } => TaskCommand::List {
+            include_completed: all,
+        },
+        TaskCliCommand::Create { title, due } => TaskCommand::Create {
+            title: TaskTitle::new(title)?,
+            due_date: due.map(TaskDate::parse).transpose()?,
+        },
+        TaskCliCommand::Show { id } => TaskCommand::Get {
+            id: TaskId::new(id)?,
+        },
+        TaskCliCommand::Update {
+            id,
+            title,
+            due,
+            clear_due,
+        } => {
+            let id = TaskId::new(id)?;
+            match (title, due, clear_due) {
+                (Some(title), None, false) => TaskCommand::Rename {
+                    id,
+                    title: TaskTitle::new(title)?,
+                },
+                (None, Some(due), false) => TaskCommand::SetDueDate {
+                    id,
+                    due_date: Some(TaskDate::parse(due)?),
+                },
+                (None, None, true) => TaskCommand::SetDueDate { id, due_date: None },
+                _ => {
+                    return Err(io::Error::other(
+                        "choose exactly one of --title, --due, or --clear-due",
+                    )
+                    .into());
+                }
+            }
+        }
+        TaskCliCommand::Complete { id } => TaskCommand::Complete {
+            id: TaskId::new(id)?,
+        },
+        TaskCliCommand::Reopen { id } => TaskCommand::Reopen {
+            id: TaskId::new(id)?,
+        },
+        TaskCliCommand::Delete { id } => TaskCommand::Delete {
+            id: TaskId::new(id)?,
+        },
+    };
+
+    let runtime = Runtime::open()?;
+    let response = runtime.commands.borrow_mut().execute(command)?;
+    print_task_response(response);
+    Ok(())
+}
+
+fn print_task_response(response: TaskCommandResult) {
+    match response {
+        TaskCommandResult::Task(task) => print_task(&task),
+        TaskCommandResult::Tasks(tasks) if tasks.is_empty() => println!("No tasks."),
+        TaskCommandResult::Tasks(tasks) => {
+            println!("ID\tSTATUS\tDUE\tTITLE");
+            for task in &tasks {
+                print_task(task);
+            }
+        }
+        TaskCommandResult::Deleted(id) => println!("Deleted task {id}."),
+    }
+}
+
+fn print_task(task: &Task) {
+    let due_date = task.due_date().map_or("-", TaskDate::as_str);
+    println!(
+        "{}\t{}\t{}\t{}",
+        task.id(),
+        task.status(),
+        due_date,
+        task.title()
+    );
+}
+
+struct Runtime {
+    commands: Rc<RefCell<CommandDispatcher>>,
+    _services: ServiceBroker,
+}
+
+impl Runtime {
+    fn open() -> Result<Self, Box<dyn Error>> {
+        let database = SqliteDatabase::open(database_path()?)?;
+        let tasks = TasksPlugin::new(database)?;
+        let mut dispatcher = CommandDispatcher::new();
+        let mut services = ServiceBroker::new();
+        tasks.register(&mut dispatcher, &mut services)?;
+        Ok(Self {
+            commands: Rc::new(RefCell::new(dispatcher)),
+            _services: services,
+        })
+    }
+}
+
+fn database_path() -> Result<PathBuf, Box<dyn Error>> {
+    if let Some(data_dir) = std::env::var_os("TUILANE_DATA_DIR") {
+        return Ok(PathBuf::from(data_dir).join("tuilane.sqlite3"));
+    }
+    let directories = ProjectDirs::from("org", "tuilane", "tuilane")
+        .ok_or_else(|| io::Error::other("could not determine the application data directory"))?;
+    Ok(directories.data_dir().join("tuilane.sqlite3"))
 }
 
 struct OverviewView {
@@ -102,5 +276,14 @@ impl View for ShortcutsView {
             ),
             area,
         );
+    }
+
+    fn render_drawer(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
+        frame.render_widget(
+            Paragraph::new("The drawer is an optional view contribution.")
+                .wrap(Wrap { trim: true }),
+            area,
+        );
+        true
     }
 }

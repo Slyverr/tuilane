@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes a minimal interactive shell with two example views, host-managed view registration and removal, keyboard navigation, focus handling, a help overlay, and responsive inspector and drawer slots. Task and project management, persistent storage, and loadable plugins are not implemented yet.
+The current build includes an interactive shell, a local Tasks view, and CLI task commands. Tasks are stored in SQLite and support create, list, show, update, complete, reopen, and delete operations through the same validated host command path. Projects, notes, ideas, calendar, backups, and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 
@@ -30,7 +30,11 @@ Use a compatible Rust toolchain and run the workspace in an interactive terminal
 cargo run -p tuilane
 cargo run -p tuilane -- --help
 cargo run -p tuilane -- --version
+cargo run -p tuilane -- task create --title "Review documentation" --due 2026-11-20
+cargo run -p tuilane -- task list
 ```
+
+Task data is stored in the platform's application data directory. Set `TUILANE_DATA_DIR` to use a different data directory.
 
 User-facing installation instructions will be added when installable releases become available.
 

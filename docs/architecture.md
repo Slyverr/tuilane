@@ -4,18 +4,19 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a five-crate Cargo workspace. The `tuilane` executable uses Clap for `--help` and `--version`, composes two example views, and starts the terminal shell when run interactively. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error.
+The repository is a six-member Cargo workspace. The `tuilane` executable uses Clap for help, version, and task commands; it composes the terminal shell and first-party Tasks view. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version; registers Overview and Shortcuts example views |
-| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered generic view registry with duplicate rejection and removal; other kernel services are planned |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version and task CLI; composes Tasks, Overview, and Shortcuts views |
+| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, and versioned service broker; events and policy are planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
-| `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | Module documentation only; behavior planned |
-| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | Validated view identifiers and display metadata; service and command contracts are planned |
-| `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
+| `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service contracts, and validated task request/response types |
+| `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date query provider, and TUI contribution |
+| Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
-The current source and workspace CI confirm these statuses. Update this section as implementation changes and tests verify additional behavior.
+The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
 
 ## Architectural invariants (approved design)
 
@@ -49,7 +50,7 @@ This diagram expresses **allowed ownership and prohibited reverse dependencies**
 
 ## Future host capabilities
 
-The following capabilities remain planned: lifecycle hooks, command/query dispatch, service discovery and calls, event delivery, permission checks, configuration management, and external plugin loading. Do not infer their availability from the view registry or UI shell.
+The following capabilities remain planned: lifecycle hooks, event delivery, command schemas and caller identities, permission checks, configuration management, and external plugin loading. The current in-process dispatcher and service broker provide typed routing for built-in code; they do not implement authorization, version negotiation, or isolation.
 
 The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
 
@@ -94,7 +95,7 @@ Illustrative, **not a finalized wire format**:
 - UI context describes current selection with bounded information, not unrestricted private record access.
 - UI contributions register views, inspector cards, overlays, drawers and contextual actions inside host-owned slots.
 
-**Contract rules:** deterministic resolution of multiple providers; missing optional providers handled gracefully; version negotiation; validation at boundaries; distinguish unavailable/invalid/denied/timed-out/provider-failure outcomes; bounded resource usage; invalidation on unload; scoped telemetry without private payloads. Caller permissions are checked at invocation, not inferred from discovery.
+**Contract rules:** deterministic resolution of multiple providers; missing optional providers handled gracefully; version negotiation; validation at boundaries; distinguish unavailable/invalid/denied/timed-out/provider-failure outcomes; bounded resource usage; invalidation on unload; scoped telemetry without private payloads. The current broker resolves exact capability identifiers and typed requests. Caller permissions are checked at invocation, not inferred from discovery.
 
 **Representation rule:** JSON-like examples explain the public mental model, not a requirement to serialize every in-process Rust call. A typed Rust dispatcher may execute trusted built-ins efficiently; a future Wasm adapter can translate the same logical contracts into a portable serialized interface. The exact schema language, runtime, registry and transport require implementation experiments.
 
@@ -106,7 +107,7 @@ The host owns sidebar/navigation, primary content region, contextual inspector, 
 
 ### Local data and persistence
 
-SQLite is the intended local transactional store, with plugin-owned schemas, host-mediated operations, migration ownership, safe backups, and stable cross-feature identities/links. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
+SQLite is the current local transactional store for Tasks and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/links. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
 
 ### Optional agents and external plugins
 
