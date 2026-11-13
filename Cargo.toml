@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/tuilane",
+    "crates/tuilane-core",
+    "crates/tuilane-ui",
+    "crates/tuilane-storage",
+    "crates/tuilane-plugin-api",
+]
+default-members = ["crates/tuilane"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+[workspace.dependencies.clap]
+version = "4.6.7"
+default-features = false
+features = ["std", "help", "usage", "error-context", "suggestions", "derive"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    name: Rust workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          semver = re.compile(
+              r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+              r"(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+              r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
+              r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+          )
+          tag = os.environ["RELEASE_TAG"]
+          if not tag.startswith("v") or semver.fullmatch(tag[1:]) is None:
+              sys.exit(f"Invalid SemVer release tag: {tag}")
+
+          metadata = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], text=True
+          ))
+          member_ids = set(metadata["workspace_members"])
+          packages = [p for p in metadata["packages"] if p["id"] in member_ids]
+          versions = {p["version"] for p in packages}
+          if not packages or len(versions) != 1:
+              sys.exit("Workspace packages do not share one release version")
+
+          expected = f"v{versions.pop()}"
+          if tag != expected:
+              sys.exit(f"Tag {tag} does not match workspace version {expected}")
+          print(f"Validated release tag {tag}")
+          PY
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check workspace
+        run: cargo check --workspace --all-targets
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test --workspace
+      - name: Check greeting output
+        run: test "$(cargo run -q -p tuilane)" = "Hello, tuilane!"
+      - name: Check CLI help
+        run: cargo run -p tuilane -- --help
+      - name: Check CLI version
+        run: cargo run -p tuilane -- --version

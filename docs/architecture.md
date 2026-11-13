@@ -1,0 +1,123 @@
+# Architecture — tuilane
+
+This document separates the **documented current baseline** from the **approved intended architecture**. A roadmap target or accepted design decision does not establish that code exists. Verify current modules and manifests in the checkout before changing them.
+
+## Current baseline (verified in source)
+
+The repository is a virtual five-crate Cargo workspace. The `tuilane` executable uses Clap for `--help` and `--version`; its default response is still a placeholder. The four supporting crates currently contain module documentation only, with no substantive runtime behavior or plugin contracts.
+
+| Component | Ownership | Current implementation status |
+| --- | --- | --- |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version; placeholder default response |
+| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Module documentation only; behavior planned |
+| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Module documentation only; behavior planned |
+| `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | Module documentation only; behavior planned |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | Module documentation only; contracts planned |
+| `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
+
+The current source and workspace CI confirm these statuses. Update this section as implementation changes and tests verify additional behavior.
+
+## Architectural invariants (approved design)
+
+1. **Composition root:** `crates/tuilane` wires the kernel, UI, persistence adapter and built-in plugins. It owns argument parsing but not domain business rules.
+2. **Core independence:** `tuilane-core` does not import terminal renderer, concrete SQLite implementation, or feature-plugin internals. Use ports/interfaces for capabilities it needs.
+3. **Plugin API independence:** `tuilane-plugin-api` contains host-neutral service, command and UI contribution contracts; it must not depend on core, Ratatui, SQLite, or individual plugins.
+4. **UI separation:** `tuilane-ui` owns terminal-specific rendering, navigation, focus, input arbitration and lifecycle. Plugin contributions use host-defined slots or public component contracts.
+5. **Storage separation:** `tuilane-storage` owns backend adapter concerns. Domain plugins own business data and migrations; no plugin reads another plugin's private tables.
+6. **Domain ownership:** Built-in tasks, calendar, projects, notes and ideas are distinct Rust feature crates when implemented. They communicate through registered contracts, not direct calls to another plugin's private Rust interfaces.
+7. **One action path:** CLI, TUI and optional agent callers eventually use the same validated command/query dispatch path; no bypasses for convenience.
+8. **Plugin isolation honesty:** Statically linked Rust plugins are trusted code running in the host process; a broker is not a security sandbox. External/untrusted plugins require a verified isolation boundary before granting hostile-code security assurances.
+
+See [coding standards](coding-standards.md), [ROADMAP.md](../ROADMAP.md), and [release policy](releasing.md) for related quality, milestone, and release rules. The architectural boundaries are summarized below.
+
+### Intended dependency direction
+
+```text
+                 tuilane (binary / composition root)
+                   /      |       |         \
+                  v       v       v          v
+                ui      core   storage    plugins/*
+                  \       |       /          /
+                   \      v      /          /
+                    tuilane-plugin-api
+
+core    -/-> UI / concrete storage / individual plugins
+pluginA -/-> pluginB internals (use public host services)
+```
+
+This diagram expresses **allowed ownership and prohibited reverse dependencies**, not a precise manifest dependency graph. Concrete adapters may depend on core ports as justified; no dependency cycle is allowed. Document exceptions before introduction.
+
+## Intended host architecture (not yet implemented)
+
+The host controls lifecycle, registration, capability discovery, service dispatch, input/output validation, permission checks, event delivery, navigation, and shared UI state. Plugins register contributions rather than controlling the terminal event loop.
+
+```text
+Keyboard/TUI         CLI scripts          Optional agent/tool adapter
+     |                    |                            |
+     v                    v                            v
+  TUI shell          CLI parser                    Scoped caller
+     \                    |                            /
+      +-------------------+---------------------------+
+                          |
+                   Host dispatcher
+        services / commands / query / events
+         context / lifecycle / authorization
+                          |
+            +-------------+--------------+
+            |             |              |
+        Tasks plugin   Calendar       Other plugins
+            |             |              |
+            +-------------+--------------+
+                          |
+              Storage ports -> SQLite
+```
+
+### Plugin service protocol
+
+The desired contract resembles structured tool/function calling rather than Rust-to-Rust private imports. A provider advertises a **namespaced capability**, a contract version, input/output schemas, declared effects, errors and access requirements. A consumer discovers a compatible provider and sends a structured request **through the host**. The host resolves provider selection, validates data, applies caller permissions, mediates execution, and returns a typed/structured response.
+
+Illustrative, **not a finalized wire format**:
+
+```json
+{
+  "service": "tasks.query.by_date",
+  "version": 1,
+  "input": { "date": "2026-11-13" }
+}
+```
+
+- Service calls request authoritative data or explicitly described operations.
+- Commands represent validated user-visible operations and state mutations.
+- Events announce completed changes; they are not an authoritative data store or a command transport.
+- UI context describes current selection with bounded information, not unrestricted private record access.
+- UI contributions register views, inspector cards, overlays, drawers and contextual actions inside host-owned slots.
+
+**Contract rules:** deterministic resolution of multiple providers; missing optional providers handled gracefully; version negotiation; validation at boundaries; distinguish unavailable/invalid/denied/timed-out/provider-failure outcomes; bounded resource usage; invalidation on unload; scoped telemetry without private payloads. Caller permissions are checked at invocation, not inferred from discovery.
+
+**Representation rule:** JSON-like examples explain the public mental model, not a requirement to serialize every in-process Rust call. A typed Rust dispatcher may execute trusted built-ins efficiently; a future Wasm adapter can translate the same logical contracts into a portable serialized interface. The exact schema language, runtime, registry and transport require implementation experiments.
+
+**Reference integration:** Calendar selects a date, queries `tasks.query.by_date@1` through the host if available, renders a task summary in an inspector, and refreshes after `tasks.changed`. It remains usable without the Tasks plugin. No Calendar dependency on Tasks' private crate or database is permitted.
+
+### UI shell
+
+The host owns sidebar/navigation, primary content region, contextual inspector, overlays/modals, bottom drawer, status feedback, responsive layout, focus and keyboard routing. Plugins supply bounded contributions. Start with simple supported layout presets, not unrestricted nested arbitrary panes. Ensure fallback under small terminal dimensions and limited capabilities.
+
+### Local data and persistence
+
+SQLite is the intended local transactional store, with plugin-owned schemas, host-mediated operations, migration ownership, safe backups, and stable cross-feature identities/links. TOML configuration and filesystem attachments may be introduced when warranted. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
+
+### Optional agents and external plugins
+
+An AI assistant is an optional plugin/adapter, not a kernel dependency. It can discover approved commands, propose calls, and obtain confirmation for meaningful writes; it never bypasses the host command path. Agent output is untrusted input.
+
+External plugin runtime candidates (such as Wasm Component Model/WIT) are deferred until first-party services prove the contracts. Runtime choice requires resource, isolation, cancellation, permission and authoring tests. Do not claim that native Rust ABI plugins offer isolation.
+
+## Architecture ownership and evolution
+
+- This document owns **current architecture and intended dependency rules**.
+- Record significant design rationale in the relevant architecture section, including alternatives and consequences.
+- [ROADMAP.md](../ROADMAP.md) owns *when* planned subsystems should become functional.
+- [Coding standards](coding-standards.md) owns coding/testing rules.
+- Discuss substantial architecture changes with maintainers before implementation, then update this document after approval and implementation.
+
+Only label an area **implemented** after source inspection and relevant tests demonstrate it.

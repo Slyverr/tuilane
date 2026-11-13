@@ -1,0 +1,12 @@
+[package]
+name = "tuilane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A local-first, modular, plugin-driven terminal workspace"
+
+[dependencies]
+clap.workspace = true
+
+[lints]
+workspace = true

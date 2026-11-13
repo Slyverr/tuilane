@@ -1,0 +1,9 @@
+[package]
+name = "tuilane-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Persistence crate for tuilane"
+
+[lints]
+workspace = true

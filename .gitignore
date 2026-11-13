@@ -1,0 +1,21 @@
+/target/
+/dist/
+/coverage/
+/.direnv/
+/result
+/result-*
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
+/.secrets/
+/.credentials/
+
+# Editor and operating-system state.
+.DS_Store
+*.swp
+*.swo
+*~
+/.idea/
+/.vscode/
