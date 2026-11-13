@@ -57,7 +57,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 ## Subsequent chapters — scope and gates
 
-### CH-02 · candidate v0.2.0 — Vault, broker and Tasks
+### CH-02 · v0.2.0 — Vault, broker and Tasks
 
 **Depends:** CH-01. Add real SQLite migrations, task models and a `plugins/tasks` crate; implement validated Tasks CRUD, CLI/TUI parity, `tasks.query.by_date@1` and service discovery through the host. **Verify:** restart durability, transaction/error handling, invalid/denied calls and no cross-plugin private access. **Exclude:** external plugin runtime and other domain modules.
 

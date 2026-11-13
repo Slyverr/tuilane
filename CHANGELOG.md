@@ -3,7 +3,10 @@
 All notable **user-visible** changes to released versions of tuilane will be recorded here, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- Add SQLite-backed task management through the CLI and TUI, with shared command routing and a versioned due-date query service.
+
+## [0.2.0] - 2026-11-13
+
+- Add SQLite-backed task CRUD through the CLI and TUI with a shared command path and versioned due-date query service.
 
 ## [0.1.0] - 2026-11-13
 
