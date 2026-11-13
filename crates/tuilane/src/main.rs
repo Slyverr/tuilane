@@ -966,7 +966,7 @@ impl View for ShortcutsView {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(
             Paragraph::new(
-                "Tab / Shift-Tab     Move focus\nh/l                 Select a registered view\nCtrl-P              Open command palette\n                     Search actions and create items\n/ in Search         Search items\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
+                "Tab / Shift-Tab     Move focus\nh/l                 Select a registered view\nCtrl-P              Open command palette\n                     Search actions and create items\n/ in Search         Search items\nf in Search         Cycle item-kind filter\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
             ),
             area,
         );

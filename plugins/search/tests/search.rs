@@ -15,7 +15,8 @@ use tuilane_plugin_api::{
     search::{
         DeleteSavedSearchCommand, IdeaSearchDocumentsV1, ListSavedSearchesCommand,
         NoteSearchDocumentsV1, ProjectSearchDocumentsV1, SaveSavedSearchCommand, SavedSearch,
-        SavedSearchName, SearchCommand, SearchCommandResult, SearchQuery, TaskSearchDocumentsV1,
+        SavedSearchName, SearchCommand, SearchCommandResult, SearchQuery, SearchResult,
+        TaskSearchDocumentsV1,
     },
 };
 use tuilane_search::SearchPlugin;
@@ -312,4 +313,91 @@ fn search_view_routes_queries_and_inspects_the_selected_result() {
     assert!(output.contains("Signal processing"), "{output}");
     assert!(output.contains("A [signal] found in the"), "{output}");
     assert!(output.contains("sample"), "{output}");
+}
+
+#[test]
+fn search_view_saves_and_runs_named_filtered_views_from_the_palette() {
+    let searches = Rc::new(RefCell::new(Vec::new()));
+    let observed = Rc::clone(&searches);
+    let mut dispatcher = CommandDispatcher::new();
+    dispatcher
+        .register(move |command: SearchCommand| {
+            observed.borrow_mut().push((
+                command.query().as_str().to_owned(),
+                command.kind().map(str::to_owned),
+            ));
+            Ok::<_, &'static str>(SearchCommandResult::Results(vec![SearchResult::new(
+                ItemSummary::new(ItemRef::new("task", "task-1").unwrap(), "Review signal").unwrap(),
+                "A [signal] found in a task",
+            )]))
+        })
+        .unwrap();
+    let saved_searches = Rc::new(RefCell::new(Vec::<SavedSearch>::new()));
+    let save_target = Rc::clone(&saved_searches);
+    dispatcher
+        .register(move |command: SaveSavedSearchCommand| {
+            let saved = command.search().clone();
+            save_target.borrow_mut().push(saved.clone());
+            Ok::<_, &'static str>(saved)
+        })
+        .unwrap();
+    let list_target = Rc::clone(&saved_searches);
+    dispatcher
+        .register(move |_: ListSavedSearchesCommand| {
+            Ok::<_, &'static str>(list_target.borrow().clone())
+        })
+        .unwrap();
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(SearchView::new(Rc::new(RefCell::new(dispatcher))))
+        .unwrap();
+
+    workspace.handle_key(key(KeyCode::Char('f')));
+    workspace.handle_key(key(KeyCode::Char('/')));
+    type_text(&mut workspace, "signal");
+    workspace.handle_key(key(KeyCode::Enter));
+    activate_palette_action(&mut workspace, "Save current search");
+    type_text(&mut workspace, "Signal tasks");
+    workspace.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(saved_searches.borrow().len(), 1);
+    assert_eq!(saved_searches.borrow()[0].kind(), Some("task"));
+
+    activate_palette_action(&mut workspace, "Browse saved searches");
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let output = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(output.contains("Signal tasks"));
+    assert!(output.contains("[task] signal"));
+    workspace.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(
+        *searches.borrow(),
+        vec![
+            ("signal".to_owned(), Some("task".to_owned())),
+            ("signal".to_owned(), Some("task".to_owned()))
+        ]
+    );
+}
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn type_text(workspace: &mut Workspace, value: &str) {
+    for character in value.chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+}
+
+fn activate_palette_action(workspace: &mut Workspace, query: &str) {
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    type_text(workspace, query);
+    workspace.handle_key(key(KeyCode::Enter));
 }

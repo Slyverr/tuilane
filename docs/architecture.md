@@ -19,7 +19,7 @@ The repository is a twelve-member Cargo workspace. The `tuilane` executable uses
 | `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution with command-palette creation; CLI editing uses `VISUAL` or `EDITOR` |
 | `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution with command-palette capture |
 | `plugins/links` | First-party Links feature | SQLite-backed directed item relations, backlinks, file/URL references, service-validated endpoints, item-removal cleanup, and TUI contribution |
-| `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; persistent named queries with optional kind filters; shared CLI command and keyboard-driven TUI results view |
+| `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; persistent named queries with optional kind filters; CLI management and TUI save/browse/run flows with kind filtering |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
