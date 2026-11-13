@@ -9,10 +9,10 @@ The repository is a virtual five-crate Cargo workspace. The `tuilane` executable
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
 | `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version; placeholder default response |
-| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Module documentation only; behavior planned |
+| `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered generic view registry with duplicate rejection and removal; other kernel services are planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Module documentation only; behavior planned |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | Module documentation only; behavior planned |
-| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | Module documentation only; contracts planned |
+| `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | Validated view identifiers and display metadata; service and command contracts are planned |
 | `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current source and workspace CI confirm these statuses. Update this section as implementation changes and tests verify additional behavior.
