@@ -4,7 +4,7 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a seven-member Cargo workspace. The `tuilane` executable uses Clap for help, version, and task commands; it composes the terminal shell and first-party Tasks view. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task records use SQLite and persist across process restarts. The Calendar crate currently provides a standalone month view with date navigation.
+The repository is a seven-member Cargo workspace. The `tuilane` executable uses Clap for help, version, and task commands; it composes the terminal shell, Tasks, and Calendar views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ The repository is a seven-member Cargo workspace. The `tuilane` executable uses 
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, and validated task request/response types |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date query provider, and TUI contribution |
-| `plugins/calendar` | First-party Calendar feature | Standalone month rendering and date navigation; host service and inspector integration is in progress |
+| `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
@@ -100,7 +100,7 @@ Illustrative, **not a finalized wire format**:
 
 **Representation rule:** JSON-like examples explain the public mental model, not a requirement to serialize every in-process Rust call. A typed Rust dispatcher may execute trusted built-ins efficiently; a future Wasm adapter can translate the same logical contracts into a portable serialized interface. The exact schema language, runtime, registry and transport require implementation experiments.
 
-**Reference integration:** Calendar selects a date, queries `tasks.query.by_date@1` through the host if available, renders a task summary in an inspector, and refreshes after `tasks.changed`. It remains usable without the Tasks plugin. No Calendar dependency on Tasks' private crate or database is permitted.
+**Current integration:** Calendar selects a date, queries `tasks.query.by_date@1` through the host when available, renders task summaries in its inspector, and refreshes after `tasks.changed`. It reports a missing or incompatible provider while keeping date navigation available. Calendar depends on the public plugin API and host contracts, not the Tasks implementation crate or its database.
 
 ### UI shell
 

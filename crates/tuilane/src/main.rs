@@ -1,5 +1,6 @@
 use std::{cell::RefCell, error::Error, io, path::PathBuf, process, rc::Rc};
 
+use chrono::Local;
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use ratatui::{
@@ -7,6 +8,7 @@ use ratatui::{
     layout::Rect,
     widgets::{Paragraph, Wrap},
 };
+use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
@@ -95,6 +97,11 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     let runtime = Runtime::open()?;
     let mut workspace = Workspace::new();
     workspace.register_view(TasksView::new(runtime.commands.clone()))?;
+    workspace.register_view(CalendarView::new(
+        Local::now().date_naive(),
+        runtime.services.clone(),
+        &runtime.events,
+    ))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -182,8 +189,8 @@ fn print_task(task: &Task) {
 
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
-    _services: ServiceBroker,
-    _events: EventBus,
+    services: Rc<RefCell<ServiceBroker>>,
+    events: EventBus,
 }
 
 impl Runtime {
@@ -196,8 +203,8 @@ impl Runtime {
         tasks.register(&mut dispatcher, &mut services, events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
-            _services: services,
-            _events: events,
+            services: Rc::new(RefCell::new(services)),
+            events,
         })
     }
 }

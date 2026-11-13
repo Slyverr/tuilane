@@ -9,6 +9,7 @@ description = "Calendar feature for tuilane"
 chrono.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+tuilane-core.workspace = true
 tuilane-plugin-api.workspace = true
 tuilane-ui.workspace = true
 

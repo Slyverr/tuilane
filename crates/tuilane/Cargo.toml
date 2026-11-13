@@ -7,8 +7,10 @@ description = "A local-first, modular, plugin-driven terminal workspace"
 
 [dependencies]
 clap.workspace = true
+chrono.workspace = true
 directories.workspace = true
 ratatui.workspace = true
+tuilane-calendar.workspace = true
 tuilane-core.workspace = true
 tuilane-plugin-api.workspace = true
 tuilane-storage.workspace = true

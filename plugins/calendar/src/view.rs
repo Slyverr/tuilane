@@ -1,4 +1,9 @@
-use chrono::{Datelike, Days, Months, NaiveDate};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
+
+use chrono::{Datelike, Days, Local, Months, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -7,27 +12,45 @@ use ratatui::{
     text::Line,
     widgets::{Paragraph, Wrap},
 };
+use tuilane_core::{EventBus, EventSubscription, ServiceBroker, ServiceBrokerError};
+use tuilane_plugin_api::tasks::{TaskDate, TaskSummary, TasksByDateV1, TasksChangedV1};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{FocusArea, View};
 
-/// Calendar month view with keyboard date selection.
+/// Calendar month view with keyboard date selection and an optional Tasks inspector.
 pub struct CalendarView {
     descriptor: ViewDescriptor,
-    today: NaiveDate,
     selected_date: NaiveDate,
+    services: Rc<RefCell<ServiceBroker>>,
+    tasks: Option<Result<Vec<TaskSummary>, String>>,
+    dirty: Rc<Cell<bool>>,
+    _event_subscription: EventSubscription,
 }
 
 impl CalendarView {
     /// Creates a calendar positioned on the supplied local date.
-    pub fn new(today: NaiveDate) -> Self {
+    pub fn new(
+        initial_date: NaiveDate,
+        services: Rc<RefCell<ServiceBroker>>,
+        events: &EventBus,
+    ) -> Self {
+        let dirty = Rc::new(Cell::new(true));
+        let event_dirty = Rc::clone(&dirty);
+        let event_subscription = events.subscribe(move |_: &TasksChangedV1| {
+            event_dirty.set(true);
+        });
+
         Self {
             descriptor: ViewDescriptor::new(
                 ViewId::new("calendar").expect("static view identifier is valid"),
                 "Calendar",
                 "Browse dates and review due tasks",
             ),
-            today,
-            selected_date: today,
+            selected_date: initial_date,
+            services,
+            tasks: None,
+            dirty,
+            _event_subscription: event_subscription,
         }
     }
 
@@ -73,6 +96,67 @@ impl CalendarView {
         )));
         lines
     }
+
+    fn refresh_tasks(&mut self) {
+        if !self.dirty.replace(false) {
+            return;
+        }
+
+        let date = self.selected_date.format("%Y-%m-%d").to_string();
+        let request_date = match TaskDate::parse(date) {
+            Ok(date) => date,
+            Err(error) => {
+                self.tasks = Some(Err(format!("Selected date cannot be queried: {error}")));
+                return;
+            }
+        };
+
+        let Ok(mut services) = self.services.try_borrow_mut() else {
+            self.dirty.set(true);
+            self.tasks = Some(Err("Tasks query is busy. Try again shortly.".to_owned()));
+            return;
+        };
+
+        let result = match services.call(TasksByDateV1::new(request_date)) {
+            Ok(tasks) => Ok(tasks),
+            Err(ServiceBrokerError::MissingProvider(capability)) => {
+                let incompatible = services
+                    .discover()
+                    .iter()
+                    .any(|available| available.name() == capability.name());
+                if incompatible {
+                    Err("Tasks service version is incompatible.".to_owned())
+                } else {
+                    Err("Tasks service is unavailable.".to_owned())
+                }
+            }
+            Err(error) => Err(format!("Tasks query failed: {error}")),
+        };
+        self.tasks = Some(result);
+    }
+
+    fn inspector_lines(&mut self) -> Vec<Line<'static>> {
+        self.refresh_tasks();
+        let mut lines = vec![Line::from(format!(
+            "Tasks due {}:",
+            self.selected_date.format("%Y-%m-%d")
+        ))];
+
+        match self.tasks.as_ref() {
+            Some(Ok(tasks)) if tasks.is_empty() => {
+                lines.push(Line::from("No tasks due on this date."));
+            }
+            Some(Ok(tasks)) => {
+                lines.extend(tasks.iter().map(|task| {
+                    Line::from(format!("{} ({})", task.title(), task.status().as_str()))
+                }));
+            }
+            Some(Err(error)) => lines.push(Line::from(error.clone())),
+            None => lines.push(Line::from("Tasks have not been queried.")),
+        }
+
+        lines
+    }
 }
 
 fn days_in_month(date: NaiveDate) -> u32 {
@@ -107,27 +191,28 @@ impl View for CalendarView {
         }
 
         let selected = match key.code {
-            KeyCode::Left | KeyCode::Char('h') if key.modifiers.is_empty() => {
-                self.selected_date.checked_sub_days(Days::new(1))
-            }
-            KeyCode::Right | KeyCode::Char('l') if key.modifiers.is_empty() => {
-                self.selected_date.checked_add_days(Days::new(1))
-            }
-            KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
-                self.selected_date.checked_sub_days(Days::new(7))
-            }
-            KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
-                self.selected_date.checked_add_days(Days::new(7))
-            }
+            KeyCode::Left => self.selected_date.checked_sub_days(Days::new(1)),
+            KeyCode::Right => self.selected_date.checked_add_days(Days::new(1)),
+            KeyCode::Up => self.selected_date.checked_sub_days(Days::new(7)),
+            KeyCode::Down => self.selected_date.checked_add_days(Days::new(7)),
             KeyCode::PageUp => self.selected_date.checked_sub_months(Months::new(1)),
             KeyCode::PageDown => self.selected_date.checked_add_months(Months::new(1)),
-            KeyCode::Char('t') if key.modifiers.is_empty() => Some(self.today),
+            KeyCode::Char('t') if key.modifiers.is_empty() => Some(Local::now().date_naive()),
             _ => return false,
         };
 
         if let Some(selected) = selected {
             self.selected_date = selected;
+            self.dirty.set(true);
         }
+        true
+    }
+
+    fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
+        frame.render_widget(
+            Paragraph::new(self.inspector_lines()).wrap(Wrap { trim: true }),
+            area,
+        );
         true
     }
 }
