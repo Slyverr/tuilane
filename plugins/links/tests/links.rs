@@ -191,6 +191,79 @@ fn external_file_and_url_references_survive_reopening_the_database() {
 }
 
 #[test]
+fn directed_link_removal_preserves_reverse_and_unrelated_relations() {
+    let file = TestDatabase::new();
+    let mut host = link_host(file.open());
+    host.commands
+        .execute(LinkCommand::Add {
+            source: item(IDEA),
+            target: item(NOTE),
+        })
+        .unwrap();
+    host.commands
+        .execute(LinkCommand::Add {
+            source: item(PROJECT),
+            target: item(IDEA),
+        })
+        .unwrap();
+
+    host.commands
+        .execute(LinkCommand::Remove {
+            source: item(IDEA),
+            target: item(NOTE),
+        })
+        .expect("remove directed link");
+
+    assert!(matches!(
+        host.commands
+            .execute(LinkCommand::Outgoing { item: item(IDEA) })
+            .unwrap(),
+        LinkCommandResult::Items(items) if items.is_empty()
+    ));
+    assert!(matches!(
+        host.commands
+            .execute(LinkCommand::Backlinks { item: item(IDEA) })
+            .unwrap(),
+        LinkCommandResult::Items(items)
+            if items.len() == 1 && items[0].reference() == &item(PROJECT)
+    ));
+}
+
+#[test]
+fn external_reference_removal_is_persistent_and_reports_missing_entries() {
+    let file = TestDatabase::new();
+    let mut host = link_host(file.open());
+    let reference = ExternalReference::file("research/meeting notes.md").unwrap();
+    host.commands
+        .execute(LinkCommand::AddReference {
+            owner: item(NOTE),
+            reference: reference.clone(),
+        })
+        .expect("add external reference");
+
+    host.commands
+        .execute(LinkCommand::RemoveReference {
+            owner: item(NOTE),
+            reference: reference.clone(),
+        })
+        .expect("remove external reference");
+    assert!(matches!(
+        host.commands
+            .execute(LinkCommand::References { owner: item(NOTE) })
+            .unwrap(),
+        LinkCommandResult::References(references) if references.is_empty()
+    ));
+    assert!(
+        host.commands
+            .execute(LinkCommand::RemoveReference {
+                owner: item(NOTE),
+                reference,
+            })
+            .is_err()
+    );
+}
+
+#[test]
 fn links_reject_missing_items_and_self_relations() {
     let file = TestDatabase::new();
     let mut host = link_host(file.open());

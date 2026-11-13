@@ -20,8 +20,11 @@ use ratatui::{
 use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_ideas::{IdeasPlugin, IdeasView};
+use tuilane_links::{LinksPlugin, LinksView};
 use tuilane_notes::{NotesPlugin, NotesView};
 use tuilane_plugin_api::ideas::{Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle};
+use tuilane_plugin_api::items::ItemRef;
+use tuilane_plugin_api::links::{ExternalReference, LinkCommand, LinkCommandResult};
 use tuilane_plugin_api::notes::{
     Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle,
 };
@@ -69,6 +72,11 @@ enum CliCommand {
     Idea {
         #[command(subcommand)]
         command: IdeaCliCommand,
+    },
+    /// Manage local item links and external references.
+    Link {
+        #[command(subcommand)]
+        command: LinkCliCommand,
     },
 }
 
@@ -183,6 +191,36 @@ enum IdeaCliCommand {
     Delete { id: String },
 }
 
+#[derive(Debug, Subcommand)]
+enum LinkCliCommand {
+    /// Add a directed link from one item to another.
+    Add { source: String, target: String },
+    /// Remove a directed item link.
+    Remove { source: String, target: String },
+    /// List the items linked from one item.
+    List { item: String },
+    /// List items that link to the selected item.
+    Backlinks { item: String },
+    /// Attach a local file path or HTTP(S) URL to an item.
+    AddReference {
+        item: String,
+        #[arg(long, conflicts_with = "file")]
+        url: Option<String>,
+        #[arg(long, conflicts_with = "url")]
+        file: Option<String>,
+    },
+    /// Remove an external reference from an item.
+    RemoveReference {
+        item: String,
+        #[arg(long, conflicts_with = "file")]
+        url: Option<String>,
+        #[arg(long, conflicts_with = "url")]
+        file: Option<String>,
+    },
+    /// List external references attached to an item.
+    References { item: String },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -191,6 +229,7 @@ fn main() {
         Some(CliCommand::Project { command }) => run_project_command(command),
         Some(CliCommand::Note { command }) => run_note_command(command),
         Some(CliCommand::Idea { command }) => run_idea_command(command),
+        Some(CliCommand::Link { command }) => run_link_command(command),
         None => run_workspace(),
     };
 
@@ -213,6 +252,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     workspace.register_view(ProjectsView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(NotesView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(IdeasView::new(runtime.commands.clone(), &runtime.events))?;
+    workspace.register_view(LinksView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -386,6 +426,52 @@ fn run_idea_command(command: IdeaCliCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_link_command(command: LinkCliCommand) -> Result<(), Box<dyn Error>> {
+    let command = match command {
+        LinkCliCommand::Add { source, target } => LinkCommand::Add {
+            source: source.parse::<ItemRef>()?,
+            target: target.parse::<ItemRef>()?,
+        },
+        LinkCliCommand::Remove { source, target } => LinkCommand::Remove {
+            source: source.parse::<ItemRef>()?,
+            target: target.parse::<ItemRef>()?,
+        },
+        LinkCliCommand::List { item } => LinkCommand::Outgoing {
+            item: item.parse::<ItemRef>()?,
+        },
+        LinkCliCommand::Backlinks { item } => LinkCommand::Backlinks {
+            item: item.parse::<ItemRef>()?,
+        },
+        LinkCliCommand::AddReference { item, url, file } => LinkCommand::AddReference {
+            owner: item.parse::<ItemRef>()?,
+            reference: parse_external_reference(url, file)?,
+        },
+        LinkCliCommand::RemoveReference { item, url, file } => LinkCommand::RemoveReference {
+            owner: item.parse::<ItemRef>()?,
+            reference: parse_external_reference(url, file)?,
+        },
+        LinkCliCommand::References { item } => LinkCommand::References {
+            owner: item.parse::<ItemRef>()?,
+        },
+    };
+
+    let runtime = Runtime::open()?;
+    let response = runtime.commands.borrow_mut().execute(command)?;
+    print_link_response(response);
+    Ok(())
+}
+
+fn parse_external_reference(
+    url: Option<String>,
+    file: Option<String>,
+) -> Result<ExternalReference, Box<dyn Error>> {
+    match (url, file) {
+        (Some(url), None) => Ok(ExternalReference::url(url)?),
+        (None, Some(file)) => Ok(ExternalReference::file(file)?),
+        _ => Err(io::Error::other("choose exactly one of --url or --file").into()),
+    }
+}
+
 fn edit_markdown(initial: &str) -> Result<String, Box<dyn Error>> {
     let editor = std::env::var_os("VISUAL")
         .filter(|value| !value.is_empty())
@@ -552,6 +638,40 @@ fn print_idea(idea: &Idea) {
     );
 }
 
+fn print_link_response(response: LinkCommandResult) {
+    match response {
+        LinkCommandResult::Link(link) => {
+            println!("Linked {} -> {}.", link.source(), link.target());
+        }
+        LinkCommandResult::Removed(link) => {
+            println!("Removed link {} -> {}.", link.source(), link.target());
+        }
+        LinkCommandResult::Items(items) if items.is_empty() => println!("No related items."),
+        LinkCommandResult::Items(items) => {
+            println!("ITEM\tTITLE");
+            for item in items {
+                println!("{}\t{}", item.reference(), item.title());
+            }
+        }
+        LinkCommandResult::Reference(reference) => {
+            println!(
+                "Attached {} reference: {}",
+                reference.kind().as_str(),
+                reference.value()
+            );
+        }
+        LinkCommandResult::References(references) if references.is_empty() => {
+            println!("No external references.");
+        }
+        LinkCommandResult::References(references) => {
+            println!("TYPE\tREFERENCE");
+            for reference in references {
+                println!("{}\t{}", reference.kind().as_str(), reference.value());
+            }
+        }
+    }
+}
+
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     services: Rc<RefCell<ServiceBroker>>,
@@ -564,17 +684,19 @@ impl Runtime {
         let tasks = TasksPlugin::new(database.clone())?;
         let projects = ProjectsPlugin::new(database.clone())?;
         let notes = NotesPlugin::new(database.clone())?;
-        let ideas = IdeasPlugin::new(database)?;
+        let ideas = IdeasPlugin::new(database.clone())?;
+        let links = LinksPlugin::new(database)?;
         let mut dispatcher = CommandDispatcher::new();
-        let mut services = ServiceBroker::new();
+        let services = Rc::new(RefCell::new(ServiceBroker::new()));
         let events = EventBus::new();
-        tasks.register(&mut dispatcher, &mut services, events.clone())?;
-        projects.register(&mut dispatcher, &mut services, events.clone())?;
-        notes.register(&mut dispatcher, &mut services, events.clone())?;
-        ideas.register(&mut dispatcher, &mut services, events.clone())?;
+        tasks.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
+        projects.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
+        notes.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
+        ideas.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
+        links.register(&mut dispatcher, services.clone(), events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
-            services: Rc::new(RefCell::new(services)),
+            services,
             events,
         })
     }

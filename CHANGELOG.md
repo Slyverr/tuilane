@@ -3,6 +3,9 @@
 All notable **user-visible** changes to released versions of tuilane will be recorded here, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Add SQLite-backed Projects, Markdown Notes, and Ideas workflows through the CLI and TUI.
+- Add directed item links, backlinks, and file/URL references with cleanup after linked-item deletion.
+
 
 ## [0.3.0] - 2026-11-13
 

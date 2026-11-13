@@ -296,6 +296,182 @@ fn idea_cli_commands_share_persistent_storage_across_processes() {
 }
 
 #[cfg(unix)]
+#[test]
+fn connected_knowledge_workflow_survives_edits_restarts_and_deletions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let data_directory = TestDataDirectory::new();
+    let editor_path = data_directory.0.join("editor");
+    fs::write(&editor_path, "#!/bin/sh\nprintf '# Research' > \"$1\"\n")
+        .expect("write temporary editor");
+    fs::set_permissions(&editor_path, fs::Permissions::from_mode(0o700))
+        .expect("make temporary editor executable");
+
+    let idea = run_tuilane_with_data(
+        &["idea", "create", "--title", "Connect work and research"],
+        &data_directory.0,
+    );
+    let idea_id = output_id(&idea);
+    let project = run_tuilane_with_data(
+        &["project", "create", "--title", "Research program"],
+        &data_directory.0,
+    );
+    let project_id = output_id(&project);
+    let task = run_tuilane_with_data(
+        &["task", "create", "--title", "Write a summary"],
+        &data_directory.0,
+    );
+    let task_id = output_id(&task);
+    let note = run_tuilane_with_editor(
+        &["note", "create", "--title", "Research"],
+        &data_directory.0,
+        &editor_path,
+    );
+    let note_id = output_id(&note);
+
+    let idea_ref = format!("idea:{idea_id}");
+    let note_ref = format!("note:{note_id}");
+    let task_ref = format!("task:{task_id}");
+    let project_ref = format!("project:{project_id}");
+    for target in [&note_ref, &task_ref, &project_ref] {
+        let linked = run_tuilane_with_data(
+            &["link", "add", idea_ref.as_str(), target.as_str()],
+            &data_directory.0,
+        );
+        assert!(linked.status.success());
+    }
+
+    let backlinks =
+        run_tuilane_with_data(&["link", "backlinks", note_ref.as_str()], &data_directory.0);
+    assert!(backlinks.status.success());
+    assert!(
+        String::from_utf8(backlinks.stdout)
+            .unwrap()
+            .contains("Connect work and research")
+    );
+
+    fs::write(
+        &editor_path,
+        "#!/bin/sh\nprintf '\\n\\nEdited after linking' >> \"$1\"\n",
+    )
+    .expect("update temporary editor");
+    let edited = run_tuilane_with_editor(
+        &["note", "edit", note_id.as_str()],
+        &data_directory.0,
+        &editor_path,
+    );
+    assert!(edited.status.success());
+    let note_rename = run_tuilane_with_data(
+        &[
+            "note",
+            "rename",
+            note_id.as_str(),
+            "--title",
+            "Updated research",
+        ],
+        &data_directory.0,
+    );
+    assert!(note_rename.status.success());
+    let project_rename = run_tuilane_with_data(
+        &[
+            "project",
+            "rename",
+            project_id.as_str(),
+            "--title",
+            "Updated research program",
+        ],
+        &data_directory.0,
+    );
+    assert!(project_rename.status.success());
+    let idea_rename = run_tuilane_with_data(
+        &[
+            "idea",
+            "rename",
+            idea_id.as_str(),
+            "--title",
+            "Connect updated work and research",
+        ],
+        &data_directory.0,
+    );
+    assert!(idea_rename.status.success());
+
+    let outgoing = run_tuilane_with_data(&["link", "list", idea_ref.as_str()], &data_directory.0);
+    let outgoing = String::from_utf8(outgoing.stdout).expect("link output should be UTF-8");
+    assert!(outgoing.contains("Updated research"));
+    assert!(outgoing.contains("Write a summary"));
+    assert!(outgoing.contains("Updated research program"));
+
+    let file_reference = run_tuilane_with_data(
+        &[
+            "link",
+            "add-reference",
+            idea_ref.as_str(),
+            "--file",
+            "research/meeting notes.md",
+        ],
+        &data_directory.0,
+    );
+    assert!(file_reference.status.success());
+    let url_reference = run_tuilane_with_data(
+        &[
+            "link",
+            "add-reference",
+            idea_ref.as_str(),
+            "--url",
+            "https://example.org/research",
+        ],
+        &data_directory.0,
+    );
+    assert!(url_reference.status.success());
+    let references = run_tuilane_with_data(
+        &["link", "references", idea_ref.as_str()],
+        &data_directory.0,
+    );
+    let references =
+        String::from_utf8(references.stdout).expect("reference output should be UTF-8");
+    assert!(references.contains("research/meeting notes.md"));
+    assert!(references.contains("https://example.org/research"));
+
+    let delete_task =
+        run_tuilane_with_data(&["task", "delete", task_id.as_str()], &data_directory.0);
+    assert!(delete_task.status.success());
+    let delete_note =
+        run_tuilane_with_data(&["note", "delete", note_id.as_str()], &data_directory.0);
+    assert!(delete_note.status.success());
+    let after_target_removal =
+        run_tuilane_with_data(&["link", "list", idea_ref.as_str()], &data_directory.0);
+    let after_target_removal =
+        String::from_utf8(after_target_removal.stdout).expect("link output should be UTF-8");
+    assert!(!after_target_removal.contains(&task_ref));
+    assert!(!after_target_removal.contains(&note_ref));
+    assert!(after_target_removal.contains(&project_ref));
+
+    let delete_idea =
+        run_tuilane_with_data(&["idea", "delete", idea_id.as_str()], &data_directory.0);
+    assert!(delete_idea.status.success());
+    let project_backlinks = run_tuilane_with_data(
+        &["link", "backlinks", project_ref.as_str()],
+        &data_directory.0,
+    );
+    assert_eq!(project_backlinks.stdout, b"No related items.\n");
+}
+
+fn output_id(output: &Output) -> String {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout.clone())
+        .expect("command output should be UTF-8")
+        .lines()
+        .next()
+        .and_then(|line| line.split('\t').next())
+        .expect("command output includes a stable ID")
+        .to_owned()
+}
+
+#[cfg(unix)]
 fn run_tuilane_with_editor(args: &[&str], data_directory: &Path, editor: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_tuilane"))
         .args(args)
