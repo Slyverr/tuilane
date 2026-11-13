@@ -31,7 +31,10 @@ use tuilane_plugin_api::notes::{
 use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle,
 };
-use tuilane_plugin_api::search::{SearchCommand, SearchCommandResult, SearchQuery, SearchResult};
+use tuilane_plugin_api::search::{
+    DeleteSavedSearchCommand, ListSavedSearchesCommand, SaveSavedSearchCommand, SavedSearch,
+    SavedSearchName, SearchCommand, SearchCommandResult, SearchQuery, SearchResult,
+};
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
@@ -92,6 +95,14 @@ enum CliCommand {
         /// Restrict results to an item kind such as task, note, or project.
         #[arg(long)]
         kind: Option<String>,
+        /// Save the query and optional kind filter under this name.
+        #[arg(long, value_name = "NAME")]
+        save: Option<String>,
+    },
+    /// Manage saved search views.
+    SavedSearch {
+        #[command(subcommand)]
+        command: SavedSearchCliCommand,
     },
 }
 
@@ -106,6 +117,16 @@ enum BackupCliCommand {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum SavedSearchCliCommand {
+    /// List saved search views.
+    List,
+    /// Run a saved search view by name.
+    Run { name: String },
+    /// Delete a saved search view by name.
+    Delete { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -259,7 +280,8 @@ fn main() {
         Some(CliCommand::Idea { command }) => run_idea_command(command),
         Some(CliCommand::Link { command }) => run_link_command(command),
         Some(CliCommand::Backup { command }) => run_backup_command(command),
-        Some(CliCommand::Search { query, kind }) => run_search_command(query, kind),
+        Some(CliCommand::Search { query, kind, save }) => run_search_command(query, kind, save),
+        Some(CliCommand::SavedSearch { command }) => run_saved_search_command(command),
         None => run_workspace(),
     };
 
@@ -290,16 +312,83 @@ fn run_backup_command(command: BackupCliCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_search_command(query: String, kind: Option<String>) -> Result<(), Box<dyn Error>> {
+fn run_search_command(
+    query: String,
+    kind: Option<String>,
+    save_name: Option<String>,
+) -> Result<(), Box<dyn Error>> {
     let query = SearchQuery::new(query)?;
-    let command = SearchCommand::new(query);
-    let command = match kind {
+    let command = SearchCommand::new(query.clone());
+    let command = match kind.as_deref() {
         Some(kind) => command.with_kind(kind)?,
         None => command,
     };
     let runtime = Runtime::open()?;
     let response = runtime.commands.borrow_mut().execute(command)?;
+    if let Some(name) = save_name {
+        let saved = SavedSearch::new(SavedSearchName::new(name)?, query, kind.as_deref())?;
+        let saved: SavedSearch = runtime
+            .commands
+            .borrow_mut()
+            .execute(SaveSavedSearchCommand::new(saved))?;
+        println!("Saved search: {}", saved.name().as_str());
+    }
     print_search_response(response);
+    Ok(())
+}
+
+fn run_saved_search_command(command: SavedSearchCliCommand) -> Result<(), Box<dyn Error>> {
+    let runtime = Runtime::open()?;
+    match command {
+        SavedSearchCliCommand::List => {
+            let saved: Vec<SavedSearch> = runtime
+                .commands
+                .borrow_mut()
+                .execute(ListSavedSearchesCommand)?;
+            if saved.is_empty() {
+                println!("No saved searches.");
+            } else {
+                for search in saved {
+                    println!(
+                        "{}\t{}\t{}",
+                        search.name().as_str(),
+                        search.kind().unwrap_or("all"),
+                        search.query().as_str()
+                    );
+                }
+            }
+        }
+        SavedSearchCliCommand::Run { name } => {
+            let name = SavedSearchName::new(name)?;
+            let saved: Vec<SavedSearch> = runtime
+                .commands
+                .borrow_mut()
+                .execute(ListSavedSearchesCommand)?;
+            let saved = saved
+                .into_iter()
+                .find(|search| search.name().as_str().eq_ignore_ascii_case(name.as_str()))
+                .ok_or_else(|| {
+                    io::Error::other(format!("saved search '{}' was not found", name.as_str()))
+                })?;
+            let response = runtime.commands.borrow_mut().execute(saved.command()?)?;
+            print_search_response(response);
+        }
+        SavedSearchCliCommand::Delete { name } => {
+            let name = SavedSearchName::new(name)?;
+            let deleted: bool = runtime
+                .commands
+                .borrow_mut()
+                .execute(DeleteSavedSearchCommand::new(name.clone()))?;
+            if !deleted {
+                return Err(io::Error::other(format!(
+                    "saved search '{}' was not found",
+                    name.as_str()
+                ))
+                .into());
+            }
+            println!("Deleted saved search: {}", name.as_str());
+        }
+    }
     Ok(())
 }
 

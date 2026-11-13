@@ -279,6 +279,63 @@ fn backup_roundtrip_restores_workspace_data_and_requires_confirmation() {
     assert_eq!(ideas.stdout, b"No ideas.\n");
 }
 
+#[test]
+fn saved_searches_persist_across_cli_processes_and_preserve_filters() {
+    let data_directory = TestDataDirectory::new();
+    let idea = run_tuilane_with_data(
+        &["idea", "create", "--title", "Plan offline research"],
+        &data_directory.0,
+    );
+    assert!(idea.status.success());
+
+    let search = run_tuilane_with_data(
+        &[
+            "search",
+            "offline research",
+            "--kind",
+            "idea",
+            "--save",
+            "Research ideas",
+        ],
+        &data_directory.0,
+    );
+    assert!(
+        search.status.success(),
+        "{}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    let search = String::from_utf8(search.stdout).unwrap();
+    assert!(search.contains("Saved search: Research ideas"));
+    assert!(search.contains("Plan offline research"));
+
+    let list = run_tuilane_with_data(&["saved-search", "list"], &data_directory.0);
+    assert!(list.status.success());
+    assert_eq!(list.stdout, b"Research ideas\tidea\toffline research\n");
+
+    let run = run_tuilane_with_data(
+        &["saved-search", "run", "research IDEAS"],
+        &data_directory.0,
+    );
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(
+        String::from_utf8(run.stdout)
+            .unwrap()
+            .contains("Plan offline research")
+    );
+
+    let delete = run_tuilane_with_data(
+        &["saved-search", "delete", "Research ideas"],
+        &data_directory.0,
+    );
+    assert!(delete.status.success());
+    let list = run_tuilane_with_data(&["saved-search", "list"], &data_directory.0);
+    assert_eq!(list.stdout, b"No saved searches.\n");
+}
+
 #[cfg(unix)]
 #[test]
 fn search_cli_finds_owner_content_and_filters_by_kind() {

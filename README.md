@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views, plus CLI commands for those features and full-text search across tasks, projects, notes, and ideas. The shell command palette opens with `Ctrl-P`, switches between registered views, runs workspace actions, and offers quick-create actions for tasks, projects, notes, and ideas. The Search view accepts `/` to enter a query, shows matching items, and provides a selected result in the inspector. Tasks, projects, notes, ideas, and relations are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Links support directed relations, backlinks, and file/URL references between validated first-party items. Portable SQLite backups are supported; loadable plugins are not implemented yet.
+The current build includes an interactive shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views, plus CLI commands for those features and full-text search across tasks, projects, notes, and ideas. The shell command palette opens with `Ctrl-P`, switches between registered views, runs workspace actions, and offers quick-create actions for tasks, projects, notes, and ideas. The Search view accepts `/` to enter a query, shows matching items, and provides a selected result in the inspector. Named search views can be saved from the CLI, listed, run, and deleted; they preserve the query and optional item-kind filter in SQLite. Tasks, projects, notes, ideas, and relations are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes support Markdown editing through the configured external editor. Links support directed relations, backlinks, and file/URL references between validated first-party items. Portable SQLite backups are supported; loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 
@@ -46,6 +46,10 @@ cargo run -p tuilane -- backup create ./workspace-backup.sqlite3
 cargo run -p tuilane -- backup restore ./workspace-backup.sqlite3 --yes
 cargo run -p tuilane -- search "release notes"
 cargo run -p tuilane -- search --kind note "release notes"
+cargo run -p tuilane -- search "release notes" --save "Release references"
+cargo run -p tuilane -- saved-search list
+cargo run -p tuilane -- saved-search run "Release references"
+cargo run -p tuilane -- saved-search delete "Release references"
 ```
 
 Backup creation does not overwrite an existing file. Restore replaces all current workspace data and requires `--yes`.
