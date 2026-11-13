@@ -14,7 +14,10 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaByIdV1, IdeaCommand, IdeaCommandResult, IdeaId, IdeaIdError, IdeaTitle,
     IdeaTitleError, IdeasChangedV1,
 };
-use tuilane_plugin_api::items::{ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary};
+use tuilane_plugin_api::items::{
+    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, SearchDocument,
+};
+use tuilane_plugin_api::search::IdeaSearchDocumentsV1;
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
 
@@ -162,6 +165,10 @@ impl IdeasPlugin {
                 },
             )
             .map_err(IdeaRegistrationError::Command)?;
+        let search_provider = self.clone();
+        services
+            .register(move |_: IdeaSearchDocumentsV1| search_provider.search_documents())
+            .map_err(IdeaRegistrationError::Service)?;
         services
             .register(move |query: IdeaByIdV1| self.item_by_id(query.id()))
             .map_err(IdeaRegistrationError::Service)?;
@@ -178,6 +185,18 @@ impl IdeasPlugin {
         let summary = ItemSummary::new(reference, idea.title().as_str())
             .map_err(|error| IdeaError::InvalidStoredValue(error.to_string()))?;
         Ok(Some(summary))
+    }
+
+    fn search_documents(&self) -> Result<Vec<SearchDocument>, IdeaError> {
+        self.list()?
+            .into_iter()
+            .map(|idea| {
+                let reference = ItemRef::new("idea", idea.id().as_str())?;
+                let item = ItemSummary::new(reference, idea.title().as_str())
+                    .map_err(|error| IdeaError::InvalidStoredValue(error.to_string()))?;
+                Ok(SearchDocument::new(item, ""))
+            })
+            .collect()
     }
 
     fn execute(&self, command: IdeaCommand) -> Result<IdeaCommandResult, IdeaError> {

@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
+use tuilane_plugin_api::search::TaskSearchDocumentsV1;
 use tuilane_plugin_api::tasks::{
     Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskTitle,
     TasksByDateV1, TasksChangedV1,
@@ -235,6 +236,27 @@ fn task_item_lookup_returns_public_reference_metadata() {
         &ItemRef::new("task", task.id().as_str()).expect("valid task reference")
     );
     assert_eq!(summary.title(), "Linkable task");
+}
+
+#[test]
+fn task_search_service_exposes_titles_and_due_status_metadata() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let task = create_task(&mut host.commands, "Review research", Some("2026-12-01"));
+
+    let documents = host
+        .services
+        .call(TaskSearchDocumentsV1)
+        .expect("query task search documents");
+
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].item().title(), "Review research");
+    assert_eq!(
+        documents[0].item().reference(),
+        &ItemRef::new("task", task.id().as_str()).expect("valid task reference")
+    );
+    assert!(documents[0].content().contains("open"));
+    assert!(documents[0].content().contains("2026-12-01"));
 }
 
 #[test]

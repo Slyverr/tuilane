@@ -10,11 +10,14 @@ use rusqlite::{OptionalExtension, Row, params, types::Type};
 use tuilane_core::{
     CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
 };
-use tuilane_plugin_api::items::{ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary};
+use tuilane_plugin_api::items::{
+    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, SearchDocument,
+};
 use tuilane_plugin_api::projects::{
     Project, ProjectByIdV1, ProjectCommand, ProjectCommandResult, ProjectId, ProjectIdError,
     ProjectTitle, ProjectsChangedV1,
 };
+use tuilane_plugin_api::search::ProjectSearchDocumentsV1;
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
 
@@ -155,6 +158,10 @@ impl ProjectsPlugin {
                 },
             )
             .map_err(ProjectRegistrationError::Command)?;
+        let search_provider = self.clone();
+        services
+            .register(move |_: ProjectSearchDocumentsV1| search_provider.search_documents())
+            .map_err(ProjectRegistrationError::Service)?;
         services
             .register(move |query: ProjectByIdV1| self.item_by_id(query.id()))
             .map_err(ProjectRegistrationError::Service)?;
@@ -171,6 +178,18 @@ impl ProjectsPlugin {
         let summary = ItemSummary::new(reference, project.title().as_str())
             .map_err(|error| ProjectError::InvalidStoredValue(error.to_string()))?;
         Ok(Some(summary))
+    }
+
+    fn search_documents(&self) -> Result<Vec<SearchDocument>, ProjectError> {
+        self.list()?
+            .into_iter()
+            .map(|project| {
+                let reference = ItemRef::new("project", project.id().as_str())?;
+                let item = ItemSummary::new(reference, project.title().as_str())
+                    .map_err(|error| ProjectError::InvalidStoredValue(error.to_string()))?;
+                Ok(SearchDocument::new(item, ""))
+            })
+            .collect()
     }
 
     fn execute(&self, command: ProjectCommand) -> Result<ProjectCommandResult, ProjectError> {

@@ -7,6 +7,7 @@ use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::projects::{
     ProjectByIdV1, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle,
 };
+use tuilane_plugin_api::search::ProjectSearchDocumentsV1;
 use tuilane_projects::{ProjectError, ProjectsPlugin, ProjectsView};
 use tuilane_storage::SqliteDatabase;
 use tuilane_ui::Workspace;
@@ -115,6 +116,25 @@ fn project_item_lookup_returns_stable_metadata() {
         &ItemRef::new("project", project.id().as_str()).expect("valid item reference")
     );
     assert_eq!(summary.title(), "Connected work");
+}
+
+#[test]
+fn project_search_service_exposes_project_titles() {
+    let file = TestDatabase::new();
+    let mut host = project_host(file.open());
+    let project = create_project(&mut host.commands, "Research workspace");
+
+    let documents = host
+        .services
+        .call(ProjectSearchDocumentsV1)
+        .expect("query project search documents");
+
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].item().title(), "Research workspace");
+    assert_eq!(
+        documents[0].item().reference(),
+        &ItemRef::new("project", project.id().as_str()).expect("valid project reference")
+    );
 }
 
 #[test]

@@ -8,6 +8,7 @@ use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::notes::{
     Markdown, NoteByIdV1, NoteCommand, NoteCommandResult, NoteId, NoteTitle,
 };
+use tuilane_plugin_api::search::NoteSearchDocumentsV1;
 use tuilane_storage::SqliteDatabase;
 use tuilane_ui::Workspace;
 use uuid::Uuid;
@@ -121,6 +122,30 @@ fn note_item_lookup_returns_stable_display_metadata() {
         &ItemRef::new("note", note.id().as_str()).expect("valid item reference")
     );
     assert_eq!(summary.title(), "Meeting notes");
+}
+
+#[test]
+fn note_search_service_exposes_markdown_content() {
+    let file = TestDatabase::new();
+    let mut host = note_host(file.open());
+    let note = create_note(
+        &mut host.commands,
+        "Reading list",
+        "Distributed tracing notes",
+    );
+
+    let documents = host
+        .services
+        .call(NoteSearchDocumentsV1)
+        .expect("query note search documents");
+
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].item().title(), "Reading list");
+    assert_eq!(
+        documents[0].item().reference(),
+        &ItemRef::new("note", note.id().as_str()).expect("valid note reference")
+    );
+    assert!(documents[0].content().contains("Distributed tracing"));
 }
 
 #[test]

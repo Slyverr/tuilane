@@ -11,8 +11,9 @@ use tuilane_core::{
     CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
 };
 use tuilane_plugin_api::items::{
-    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, ItemSummaryError,
+    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, ItemSummaryError, SearchDocument,
 };
+use tuilane_plugin_api::search::TaskSearchDocumentsV1;
 use tuilane_plugin_api::tasks::{
     Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskSummary,
     TaskTitle, TasksByDateV1, TasksChangedV1,
@@ -160,6 +161,10 @@ impl TasksPlugin {
         services
             .register(move |query: TasksByDateV1| date_provider.tasks_by_date(query))
             .map_err(TaskRegistrationError::Service)?;
+        let search_provider = self.clone();
+        services
+            .register(move |_: TaskSearchDocumentsV1| search_provider.search_documents())
+            .map_err(TaskRegistrationError::Service)?;
         services
             .register(move |query: TaskByIdV1| self.item_by_id(query.id()))
             .map_err(TaskRegistrationError::Service)?;
@@ -175,6 +180,21 @@ impl TasksPlugin {
         let reference = ItemRef::new("task", task.id().as_str())?;
         let summary = ItemSummary::new(reference, task.title().as_str())?;
         Ok(Some(summary))
+    }
+
+    fn search_documents(&self) -> Result<Vec<SearchDocument>, TaskError> {
+        self.list(true)?
+            .into_iter()
+            .map(|task| {
+                let reference = ItemRef::new("task", task.id().as_str())?;
+                let item = ItemSummary::new(reference, task.title().as_str())?;
+                let due_date = task.due_date().map_or("", TaskDate::as_str);
+                Ok(SearchDocument::new(
+                    item,
+                    format!("{} {due_date}", task.status()),
+                ))
+            })
+            .collect()
     }
 
     /// Executes one validated task operation.

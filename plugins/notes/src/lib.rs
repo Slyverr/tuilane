@@ -10,11 +10,14 @@ use rusqlite::{OptionalExtension, Row, params, types::Type};
 use tuilane_core::{
     CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
 };
-use tuilane_plugin_api::items::{ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary};
+use tuilane_plugin_api::items::{
+    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, SearchDocument,
+};
 use tuilane_plugin_api::notes::{
     Markdown, MarkdownError, Note, NoteByIdV1, NoteCommand, NoteCommandResult, NoteId, NoteIdError,
     NoteTitle, NoteTitleError, NotesChangedV1,
 };
+use tuilane_plugin_api::search::NoteSearchDocumentsV1;
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
 
@@ -171,6 +174,10 @@ impl NotesPlugin {
                 },
             )
             .map_err(NoteRegistrationError::Command)?;
+        let search_provider = self.clone();
+        services
+            .register(move |_: NoteSearchDocumentsV1| search_provider.search_documents())
+            .map_err(NoteRegistrationError::Service)?;
         services
             .register(move |query: NoteByIdV1| self.item_by_id(query.id()))
             .map_err(NoteRegistrationError::Service)?;
@@ -187,6 +194,18 @@ impl NotesPlugin {
         let summary = ItemSummary::new(reference, note.title().as_str())
             .map_err(|error| NoteError::InvalidStoredValue(error.to_string()))?;
         Ok(Some(summary))
+    }
+
+    fn search_documents(&self) -> Result<Vec<SearchDocument>, NoteError> {
+        self.list()?
+            .into_iter()
+            .map(|note| {
+                let reference = ItemRef::new("note", note.id().as_str())?;
+                let item = ItemSummary::new(reference, note.title().as_str())
+                    .map_err(|error| NoteError::InvalidStoredValue(error.to_string()))?;
+                Ok(SearchDocument::new(item, note.body().as_str()))
+            })
+            .collect()
     }
 
     fn execute(&self, command: NoteCommand) -> Result<NoteCommandResult, NoteError> {

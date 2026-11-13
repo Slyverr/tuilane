@@ -6,6 +6,7 @@ use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_ideas::{IdeaError, IdeasPlugin, IdeasView};
 use tuilane_plugin_api::ideas::{IdeaByIdV1, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle};
 use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
+use tuilane_plugin_api::search::IdeaSearchDocumentsV1;
 use tuilane_storage::SqliteDatabase;
 use tuilane_ui::Workspace;
 use uuid::Uuid;
@@ -105,6 +106,25 @@ fn idea_item_lookup_returns_stable_display_metadata() {
         &ItemRef::new("idea", idea.id().as_str()).expect("valid item reference")
     );
     assert_eq!(summary.title(), "Build a weekly review");
+}
+
+#[test]
+fn idea_search_service_exposes_idea_titles() {
+    let file = TestDatabase::new();
+    let mut host = idea_host(file.open());
+    let idea = create_idea(&mut host.commands, "Map release feedback");
+
+    let documents = host
+        .services
+        .call(IdeaSearchDocumentsV1)
+        .expect("query idea search documents");
+
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].item().title(), "Map release feedback");
+    assert_eq!(
+        documents[0].item().reference(),
+        &ItemRef::new("idea", idea.id().as_str()).expect("valid idea reference")
+    );
 }
 
 #[test]
