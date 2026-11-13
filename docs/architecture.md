@@ -4,7 +4,7 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is an eleven-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, and link commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, note, idea, and relation records use SQLite and persist across process restarts.
+The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, and link commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, and Links views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task, project, note, idea, and relation records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
@@ -19,6 +19,7 @@ The repository is an eleven-member Cargo workspace. The `tuilane` executable use
 | `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution; CLI editing uses `VISUAL` or `EDITOR` |
 | `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution |
 | `plugins/links` | First-party Links feature | SQLite-backed directed item relations, backlinks, file/URL references, service-validated endpoints, item-removal cleanup, and TUI contribution |
+| `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; command contract and application composition are being integrated |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.

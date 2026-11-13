@@ -12,6 +12,7 @@ members = [
     "plugins/notes",
     "plugins/ideas",
     "plugins/links",
+    "plugins/search",
 ]
 default-members = ["crates/tuilane"]
 
@@ -76,6 +77,9 @@ path = "plugins/ideas"
 
 [workspace.dependencies.tuilane-links]
 path = "plugins/links"
+
+[workspace.dependencies.tuilane-search]
+path = "plugins/search"
 
 [workspace.dependencies.uuid]
 version = "1.29.0"

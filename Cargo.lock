@@ -1107,6 +1107,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tuilane-search"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "tuilane-core",
+ "tuilane-plugin-api",
+ "tuilane-storage",
+]
+
+[[package]]
 name = "tuilane-storage"
 version = "0.4.0"
 dependencies = [
