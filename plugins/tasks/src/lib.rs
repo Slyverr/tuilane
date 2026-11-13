@@ -10,9 +10,12 @@ use rusqlite::{OptionalExtension, Row, params, types::Type};
 use tuilane_core::{
     CommandDispatcher, CommandRegistrationError, EventBus, ServiceBroker, ServiceRegistrationError,
 };
+use tuilane_plugin_api::items::{
+    ItemRef, ItemReferenceError, ItemRemovedV1, ItemSummary, ItemSummaryError,
+};
 use tuilane_plugin_api::tasks::{
-    Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskSummary, TaskTitle,
-    TasksByDateV1, TasksChangedV1,
+    Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskSummary,
+    TaskTitle, TasksByDateV1, TasksChangedV1,
 };
 use tuilane_storage::{SqliteDatabase, StorageError};
 use uuid::Uuid;
@@ -29,6 +32,8 @@ pub enum TaskError {
     NotFound(TaskId),
     UnsupportedSchemaVersion(i64),
     InvalidStoredValue(String),
+    ItemReference(ItemReferenceError),
+    ItemSummary(ItemSummaryError),
 }
 
 impl fmt::Display for TaskError {
@@ -46,6 +51,8 @@ impl fmt::Display for TaskError {
                     "task database contains an invalid value: {value}"
                 )
             }
+            Self::ItemReference(error) => error.fmt(formatter),
+            Self::ItemSummary(error) => error.fmt(formatter),
         }
     }
 }
@@ -54,6 +61,8 @@ impl Error for TaskError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Storage(error) => Some(error),
+            Self::ItemReference(error) => Some(error),
+            Self::ItemSummary(error) => Some(error),
             Self::NotFound(_) | Self::UnsupportedSchemaVersion(_) | Self::InvalidStoredValue(_) => {
                 None
             }
@@ -64,6 +73,18 @@ impl Error for TaskError {
 impl From<StorageError> for TaskError {
     fn from(error: StorageError) -> Self {
         Self::Storage(error)
+    }
+}
+
+impl From<ItemReferenceError> for TaskError {
+    fn from(error: ItemReferenceError) -> Self {
+        Self::ItemReference(error)
+    }
+}
+
+impl From<ItemSummaryError> for TaskError {
+    fn from(error: ItemSummaryError) -> Self {
+        Self::ItemSummary(error)
     }
 }
 
@@ -120,18 +141,40 @@ impl TasksPlugin {
                 move |command: TaskCommand| -> Result<TaskCommandResult, TaskError> {
                     let notify =
                         !matches!(&command, TaskCommand::Get { .. } | TaskCommand::List { .. });
+                    let removed_item = match &command {
+                        TaskCommand::Delete { id } => Some(ItemRef::new("task", id.as_str())?),
+                        _ => None,
+                    };
                     let response = command_provider.execute(command)?;
                     if notify {
                         command_events.publish(TasksChangedV1);
+                    }
+                    if let Some(item) = removed_item {
+                        command_events.publish(ItemRemovedV1::new(item));
                     }
                     Ok(response)
                 },
             )
             .map_err(TaskRegistrationError::Command)?;
+        let date_provider = self.clone();
         services
-            .register(move |query: TasksByDateV1| self.tasks_by_date(query))
+            .register(move |query: TasksByDateV1| date_provider.tasks_by_date(query))
+            .map_err(TaskRegistrationError::Service)?;
+        services
+            .register(move |query: TaskByIdV1| self.item_by_id(query.id()))
             .map_err(TaskRegistrationError::Service)?;
         Ok(())
+    }
+
+    fn item_by_id(&self, id: &TaskId) -> Result<Option<ItemSummary>, TaskError> {
+        let task = match self.get(id) {
+            Ok(task) => task,
+            Err(TaskError::NotFound(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let reference = ItemRef::new("task", task.id().as_str())?;
+        let summary = ItemSummary::new(reference, task.title().as_str())?;
+        Ok(Some(summary))
     }
 
     /// Executes one validated task operation.

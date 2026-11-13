@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::{CapabilityId, Command, Event, ServiceRequest};
+use crate::{CapabilityId, Command, Event, ServiceRequest, items::ItemSummary};
 
 /// Stable identifier for a task.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -351,6 +351,30 @@ impl ServiceRequest for TasksByDateV1 {
     const CAPABILITY: CapabilityId = CapabilityId::new("tasks.query.by_date", 1);
 }
 
+/// Version 1 lookup for a task's stable cross-feature item reference and title.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskByIdV1 {
+    id: TaskId,
+}
+
+impl TaskByIdV1 {
+    /// Creates a lookup for one validated task ID.
+    pub fn new(id: TaskId) -> Self {
+        Self { id }
+    }
+
+    /// Returns the requested task ID.
+    pub fn id(&self) -> &TaskId {
+        &self.id
+    }
+}
+
+impl ServiceRequest for TaskByIdV1 {
+    type Response = Option<ItemSummary>;
+
+    const CAPABILITY: CapabilityId = CapabilityId::new("tasks.item.by_id", 1);
+}
+
 /// Notification emitted after a task mutation has committed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TasksChangedV1;
@@ -379,6 +403,18 @@ mod tests {
         assert!(TaskDate::parse("2023-02-29").is_err());
         assert!(TaskDate::parse("2026-13-01").is_err());
         assert!(TaskDate::parse("2026-2-01").is_err());
+    }
+
+    #[test]
+    fn task_by_id_uses_a_versioned_item_lookup_capability() {
+        let id = TaskId::new("00000000-0000-4000-8000-000000000001").unwrap();
+        let request = TaskByIdV1::new(id.clone());
+
+        assert_eq!(request.id(), &id);
+        assert_eq!(
+            TaskByIdV1::CAPABILITY,
+            CapabilityId::new("tasks.item.by_id", 1)
+        );
     }
 
     #[test]

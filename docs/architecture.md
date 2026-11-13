@@ -13,7 +13,7 @@ The repository is a seven-member Cargo workspace. The `tuilane` executable uses 
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task types, and stable cross-feature item references |
-| `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date query provider, and TUI contribution |
+| `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution, and committed change/removal events |
 | `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 

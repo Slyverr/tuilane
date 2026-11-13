@@ -3,9 +3,10 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::tasks::{
-    Task, TaskCommand, TaskCommandResult, TaskDate, TaskStatus, TaskTitle, TasksByDateV1,
-    TasksChangedV1,
+    Task, TaskByIdV1, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskStatus, TaskTitle,
+    TasksByDateV1, TasksChangedV1,
 };
 use tuilane_storage::SqliteDatabase;
 use tuilane_tasks::{TaskError, TasksPlugin, TasksView};
@@ -218,6 +219,39 @@ fn date_query_is_discovered_and_routed_through_the_host() {
 }
 
 #[test]
+fn task_item_lookup_returns_public_reference_metadata() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let task = create_task(&mut host.commands, "Linkable task", None);
+
+    let summary = host
+        .services
+        .call(TaskByIdV1::new(task.id().clone()))
+        .expect("query task item service")
+        .expect("task exists");
+
+    assert_eq!(
+        summary.reference(),
+        &ItemRef::new("task", task.id().as_str()).expect("valid task reference")
+    );
+    assert_eq!(summary.title(), "Linkable task");
+}
+
+#[test]
+fn task_item_lookup_returns_none_for_missing_tasks() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let id = TaskId::new("00000000-0000-4000-8000-000000000001").expect("valid task id");
+
+    let summary = host
+        .services
+        .call(TaskByIdV1::new(id))
+        .expect("missing task is a valid lookup");
+
+    assert!(summary.is_none());
+}
+
+#[test]
 fn task_mutations_publish_events_only_after_successful_commands() {
     let file = TestDatabase::new();
     let mut host = task_host(file.open());
@@ -261,6 +295,29 @@ fn task_mutations_publish_events_only_after_successful_commands() {
             .is_err()
     );
     assert_eq!(event_count.get(), 2);
+}
+
+#[test]
+fn task_deletion_publishes_a_stable_item_removal_event() {
+    let file = TestDatabase::new();
+    let mut host = task_host(file.open());
+    let removed = Rc::new(RefCell::new(None));
+    let event_target = Rc::clone(&removed);
+    let _subscription = host.events.subscribe(move |event: &ItemRemovedV1| {
+        *event_target.borrow_mut() = Some(event.item().clone());
+    });
+    let task = create_task(&mut host.commands, "Remove me", None);
+
+    host.commands
+        .execute(TaskCommand::Delete {
+            id: task.id().clone(),
+        })
+        .expect("delete task");
+
+    assert_eq!(
+        *removed.borrow(),
+        Some(ItemRef::new("task", task.id().as_str()).expect("valid task reference"))
+    );
 }
 
 #[test]
