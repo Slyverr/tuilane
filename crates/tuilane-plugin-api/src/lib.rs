@@ -7,6 +7,7 @@ pub mod items;
 pub mod links;
 pub mod notes;
 pub mod projects;
+pub mod search;
 pub mod tasks;
 
 /// Typed notification published by a host or feature after a completed change.

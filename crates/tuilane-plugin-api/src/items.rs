@@ -77,6 +77,33 @@ pub struct ItemSummary {
     title: Box<str>,
 }
 
+/// Text supplied by an item owner for host-mediated full-text indexing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchDocument {
+    item: ItemSummary,
+    content: Box<str>,
+}
+
+impl SearchDocument {
+    /// Creates a search document using validated item identity and title.
+    pub fn new(item: ItemSummary, content: impl Into<Box<str>>) -> Self {
+        Self {
+            item,
+            content: content.into(),
+        }
+    }
+
+    /// Returns the stable item identity and title.
+    pub fn item(&self) -> &ItemSummary {
+        &self.item
+    }
+
+    /// Returns text owned by the feature and approved for indexing.
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+}
+
 impl ItemSummary {
     /// Creates display metadata for a resolved item.
     pub fn new(reference: ItemRef, title: impl AsRef<str>) -> Result<Self, ItemSummaryError> {
