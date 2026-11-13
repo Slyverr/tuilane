@@ -8,6 +8,7 @@ members = [
     "crates/tuilane-plugin-api",
     "plugins/tasks",
     "plugins/calendar",
+    "plugins/projects",
 ]
 default-members = ["crates/tuilane"]
 
@@ -60,6 +61,9 @@ path = "plugins/tasks"
 
 [workspace.dependencies.tuilane-calendar]
 path = "plugins/calendar"
+
+[workspace.dependencies.tuilane-projects]
+path = "plugins/projects"
 
 [workspace.dependencies.uuid]
 version = "1.29.0"

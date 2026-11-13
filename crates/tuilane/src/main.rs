@@ -10,10 +10,14 @@ use ratatui::{
 };
 use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_plugin_api::projects::{
+    Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle,
+};
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
+use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_storage::SqliteDatabase;
 use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
@@ -35,6 +39,11 @@ enum CliCommand {
     Task {
         #[command(subcommand)]
         command: TaskCliCommand,
+    },
+    /// Manage local projects.
+    Project {
+        #[command(subcommand)]
+        command: ProjectCliCommand,
     },
 }
 
@@ -78,11 +87,35 @@ enum TaskCliCommand {
     Delete { id: String },
 }
 
+#[derive(Debug, Subcommand)]
+enum ProjectCliCommand {
+    /// List projects.
+    List,
+    /// Create a project.
+    Create {
+        /// Project title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Show one project.
+    Show { id: String },
+    /// Rename one project.
+    Rename {
+        id: String,
+        /// Replacement project title.
+        #[arg(long)]
+        title: String,
+    },
+    /// Delete one project.
+    Delete { id: String },
+}
+
 fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
         Some(CliCommand::Task { command }) => run_task_command(command),
+        Some(CliCommand::Project { command }) => run_project_command(command),
         None => run_workspace(),
     };
 
@@ -102,6 +135,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
         runtime.services.clone(),
         &runtime.events,
     ))?;
+    workspace.register_view(ProjectsView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
@@ -162,6 +196,30 @@ fn run_task_command(command: TaskCliCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_project_command(command: ProjectCliCommand) -> Result<(), Box<dyn Error>> {
+    let command = match command {
+        ProjectCliCommand::List => ProjectCommand::List,
+        ProjectCliCommand::Create { title } => ProjectCommand::Create {
+            title: ProjectTitle::new(title)?,
+        },
+        ProjectCliCommand::Show { id } => ProjectCommand::Get {
+            id: ProjectId::new(id)?,
+        },
+        ProjectCliCommand::Rename { id, title } => ProjectCommand::Rename {
+            id: ProjectId::new(id)?,
+            title: ProjectTitle::new(title)?,
+        },
+        ProjectCliCommand::Delete { id } => ProjectCommand::Delete {
+            id: ProjectId::new(id)?,
+        },
+    };
+
+    let runtime = Runtime::open()?;
+    let response = runtime.commands.borrow_mut().execute(command)?;
+    print_project_response(response);
+    Ok(())
+}
+
 fn print_task_response(response: TaskCommandResult) {
     match response {
         TaskCommandResult::Task(task) => print_task(&task),
@@ -187,6 +245,30 @@ fn print_task(task: &Task) {
     );
 }
 
+fn print_project_response(response: ProjectCommandResult) {
+    match response {
+        ProjectCommandResult::Project(project) => print_project(&project),
+        ProjectCommandResult::Projects(projects) if projects.is_empty() => println!("No projects."),
+        ProjectCommandResult::Projects(projects) => {
+            println!("ID\tTITLE\tCREATED\tUPDATED");
+            for project in &projects {
+                print_project(project);
+            }
+        }
+        ProjectCommandResult::Deleted(id) => println!("Deleted project {id}."),
+    }
+}
+
+fn print_project(project: &Project) {
+    println!(
+        "{}\t{}\t{}\t{}",
+        project.id(),
+        project.title(),
+        project.created_at(),
+        project.updated_at()
+    );
+}
+
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
     services: Rc<RefCell<ServiceBroker>>,
@@ -196,11 +278,13 @@ struct Runtime {
 impl Runtime {
     fn open() -> Result<Self, Box<dyn Error>> {
         let database = SqliteDatabase::open(database_path()?)?;
-        let tasks = TasksPlugin::new(database)?;
+        let tasks = TasksPlugin::new(database.clone())?;
+        let projects = ProjectsPlugin::new(database)?;
         let mut dispatcher = CommandDispatcher::new();
         let mut services = ServiceBroker::new();
         let events = EventBus::new();
         tasks.register(&mut dispatcher, &mut services, events.clone())?;
+        projects.register(&mut dispatcher, &mut services, events.clone())?;
         Ok(Self {
             commands: Rc::new(RefCell::new(dispatcher)),
             services: Rc::new(RefCell::new(services)),

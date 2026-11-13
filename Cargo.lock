@@ -1019,6 +1019,7 @@ dependencies = [
  "tuilane-calendar",
  "tuilane-core",
  "tuilane-plugin-api",
+ "tuilane-projects",
  "tuilane-storage",
  "tuilane-tasks",
  "tuilane-ui",
@@ -1046,6 +1047,20 @@ dependencies = [
 [[package]]
 name = "tuilane-plugin-api"
 version = "0.3.0"
+
+[[package]]
+name = "tuilane-projects"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "rusqlite",
+ "tuilane-core",
+ "tuilane-plugin-api",
+ "tuilane-storage",
+ "tuilane-ui",
+ "uuid",
+]
 
 [[package]]
 name = "tuilane-storage"

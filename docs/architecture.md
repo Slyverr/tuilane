@@ -4,17 +4,18 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a seven-member Cargo workspace. The `tuilane` executable uses Clap for help, version, and task commands; it composes the terminal shell, Tasks, and Calendar views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task records use SQLite and persist across process restarts.
+The repository is an eight-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, and project commands; it composes the terminal shell, Tasks, Calendar, and Projects views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. Task and project records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
-| `crates/tuilane` | CLI/TUI executable and composition root | Clap help/version and task CLI; composes Tasks, Overview, and Shortcuts views |
+| `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project CLI; composes Tasks, Calendar, Projects, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
 | `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help overlay, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, and transactional access |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task types, and stable cross-feature item references |
 | `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution, and committed change/removal events |
 | `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
+| `plugins/projects` | First-party Projects feature | SQLite-backed project CRUD, versioned item lookup service, and TUI contribution |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.

@@ -1,0 +1,19 @@
+[package]
+name = "tuilane-projects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Projects feature for tuilane"
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+rusqlite.workspace = true
+tuilane-core.workspace = true
+tuilane-plugin-api.workspace = true
+tuilane-storage.workspace = true
+tuilane-ui.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

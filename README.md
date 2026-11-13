@@ -18,7 +18,7 @@ It combines a terminal user interface (TUI) with a scriptable command-line inter
 
 **Early development.**
 
-The current build includes an interactive shell, Tasks and Calendar views, and CLI task commands. Tasks are stored in SQLite and support create, list, show, update, complete, reopen, and delete operations through the same validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes. It remains usable if the Tasks service is unavailable or has an incompatible version, although the current application composition enables Tasks by default. Projects, notes, ideas, backups, and loadable plugins are not implemented yet.
+The current build includes an interactive shell, Tasks, Calendar, and Projects views, plus CLI commands for tasks and projects. Tasks and projects are stored in SQLite and use the shared validated host command path. Calendar supports month/date navigation and queries due tasks through the host service broker; its inspector refreshes after task changes and remains usable if the Tasks service is unavailable or has an incompatible version. Notes, ideas, backups, and loadable plugins are not implemented yet.
 
 For implementation progress and upcoming milestones, see the [roadmap](ROADMAP.md).
 
@@ -32,6 +32,8 @@ cargo run -p tuilane -- --help
 cargo run -p tuilane -- --version
 cargo run -p tuilane -- task create --title "Review documentation" --due 2026-11-20
 cargo run -p tuilane -- task list
+cargo run -p tuilane -- project create --title "Release planning"
+cargo run -p tuilane -- project list
 ```
 
 Task data is stored in the platform's application data directory. Set `TUILANE_DATA_DIR` to use a different data directory.

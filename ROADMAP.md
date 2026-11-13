@@ -17,7 +17,7 @@ Completion is proven by implementation, user-visible behavior, and passing accep
 
 ## Current state and naming
 
-The current baseline is a seven-member Cargo workspace with a composable terminal shell and first-party Tasks and Calendar features in early development. Calendar has month/date navigation, queries due tasks through the host broker, and refreshes its inspector after task-change events. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
+The current baseline is an eight-member Cargo workspace with a composable terminal shell and first-party Tasks, Calendar, and Projects features in early development. Calendar queries due tasks through the host broker and refreshes after task changes; Projects support durable CRUD through the CLI and TUI. Connected Notes, Ideas, and links remain part of CH-04. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
 
 Legacy prototype behavior or data should only be ported through tracked, validated tasks after the relevant source/fixtures are available in the repository. Do not depend on private or untracked source locations.
 
