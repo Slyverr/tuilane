@@ -184,7 +184,7 @@ fn projects_view_creates_records_through_the_host_command_path() {
         .register_view(ProjectsView::new(commands, &host.events))
         .expect("register Projects view");
 
-    workspace.handle_key(key(KeyCode::Char('c')));
+    activate_palette_action(&mut workspace, "Create project");
     for character in "Release plan".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
@@ -219,6 +219,14 @@ fn newer_project_schema_versions_are_rejected() {
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn activate_palette_action(workspace: &mut Workspace, query: &str) {
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    for character in query.chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
 }
 
 fn render_text(workspace: &mut Workspace) -> String {

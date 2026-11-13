@@ -12,7 +12,7 @@ use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, View, ViewAction};
 
 enum InputMode {
     Title { action: TitleAction, value: String },
@@ -248,6 +248,26 @@ impl View for TasksView {
             Paragraph::new(self.task_lines()).wrap(Wrap { trim: true }),
             area,
         );
+    }
+
+    fn command_palette_actions(&self) -> Vec<ViewAction> {
+        vec![ViewAction::new(
+            "create",
+            "Create task",
+            "Capture a task with a title",
+        )]
+    }
+
+    fn activate_command_palette_action(&mut self, id: &str) -> bool {
+        if id != "create" {
+            return false;
+        }
+        self.input_mode = Some(InputMode::Title {
+            action: TitleAction::Create,
+            value: String::new(),
+        });
+        self.status = None;
+        true
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {

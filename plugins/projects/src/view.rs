@@ -12,7 +12,7 @@ use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle, ProjectsChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, View, ViewAction};
 
 enum InputMode {
     Title {
@@ -199,6 +199,26 @@ impl View for ProjectsView {
             Paragraph::new(self.project_lines()).wrap(Wrap { trim: true }),
             area,
         );
+    }
+
+    fn command_palette_actions(&self) -> Vec<ViewAction> {
+        vec![ViewAction::new(
+            "create",
+            "Create project",
+            "Create a project with a title",
+        )]
+    }
+
+    fn activate_command_palette_action(&mut self, id: &str) -> bool {
+        if id != "create" {
+            return false;
+        }
+        self.input_mode = Some(InputMode::Title {
+            id: None,
+            value: String::new(),
+        });
+        self.status = None;
+        true
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {

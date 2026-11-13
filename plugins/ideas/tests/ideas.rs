@@ -174,7 +174,7 @@ fn ideas_view_captures_records_through_the_host_command_path() {
         .register_view(IdeasView::new(commands, &host.events))
         .expect("register Ideas view");
 
-    workspace.handle_key(key(KeyCode::Char('c')));
+    activate_palette_action(&mut workspace, "Capture idea");
     for character in "Prototype offline capture".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
@@ -209,6 +209,14 @@ fn newer_idea_schema_versions_are_rejected() {
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn activate_palette_action(workspace: &mut Workspace, query: &str) {
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    for character in query.chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
 }
 
 fn render_text(workspace: &mut Workspace) -> String {

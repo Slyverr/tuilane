@@ -195,7 +195,7 @@ fn notes_view_creates_records_through_the_host_command_path() {
         .register_view(NotesView::new(commands, &host.events))
         .expect("register Notes view");
 
-    workspace.handle_key(key(KeyCode::Char('c')));
+    activate_palette_action(&mut workspace, "Create note");
     for character in "Draft".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
@@ -231,6 +231,14 @@ fn newer_note_schema_versions_are_rejected() {
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn activate_palette_action(workspace: &mut Workspace, query: &str) {
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    for character in query.chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
 }
 
 fn render_text(workspace: &mut Workspace) -> String {

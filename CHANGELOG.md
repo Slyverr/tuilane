@@ -4,6 +4,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+- Add a keyboard command palette for switching views, running workspace actions, and opening feature quick-create flows.
+
 - Add a keyboard command palette for switching registered views and running workspace actions.
 - Add standalone SQLite backup creation and confirmed restore commands.
 - Add CLI and TUI full-text search across tasks, projects, notes, and ideas with item-kind filtering.

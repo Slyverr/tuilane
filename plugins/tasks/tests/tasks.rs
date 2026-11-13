@@ -369,6 +369,14 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+fn activate_palette_action(workspace: &mut Workspace, query: &str) {
+    workspace.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    for character in query.chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
+}
+
 fn render_text(workspace: &mut Workspace) -> String {
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).expect("create test terminal");
     terminal
@@ -399,7 +407,7 @@ fn task_view_routes_create_due_date_completion_and_delete_commands() {
         .register_view(TasksView::new(commands.clone()))
         .expect("register task view");
 
-    workspace.handle_key(key(KeyCode::Char('c')));
+    activate_palette_action(&mut workspace, "Create task");
     for character in "write q".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }

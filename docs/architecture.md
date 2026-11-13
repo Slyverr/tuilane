@@ -10,14 +10,14 @@ The repository is a twelve-member Cargo workspace. The `tuilane` executable uses
 | --- | --- | --- |
 | `crates/tuilane` | CLI/TUI executable and composition root | Clap task/project/note/idea/link/backup/search CLI; composes Tasks, Calendar, Projects, Notes, Ideas, Links, Search, Overview, and Shortcuts views |
 | `crates/tuilane-core` | Kernel, registration, broker, commands, events, policy | Ordered view registry, typed command dispatcher, versioned service broker, and synchronous typed event bus; policy is planned |
-| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help and command-palette overlays, and managed terminal lifecycle |
+| `crates/tuilane-ui` | Terminal lifecycle, layouts, widgets, input/focus | Ratatui shell, responsive navigation, focus, inspector/drawer slots, help and command-palette overlays with view-contributed actions, and managed terminal lifecycle |
 | `crates/tuilane-storage` | SQLite adapter, migrations, backup/restore | File-backed and in-memory connections, WAL setup, transactional access, validated standalone backup creation, and guarded restore with recovery copy |
 | `crates/tuilane-plugin-api` | Host-neutral contracts and contribution types | View metadata, typed command/service/event contracts, validated task/note types, stable item references, and typed relation/external-reference contracts |
-| `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution, and committed change/removal events |
+| `plugins/tasks` | First-party Tasks feature | SQLite migration, task CRUD, due-date/item lookup providers, TUI contribution with command-palette quick creation, and committed change/removal events |
 | `plugins/calendar` | First-party Calendar feature | Month/date navigation and a Tasks inspector routed through the service broker; refreshes after task-change events and handles a missing or incompatible provider |
-| `plugins/projects` | First-party Projects feature | SQLite-backed project CRUD, versioned item lookup service, and TUI contribution |
-| `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution; CLI editing uses `VISUAL` or `EDITOR` |
-| `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution |
+| `plugins/projects` | First-party Projects feature | SQLite-backed project CRUD, versioned item lookup service, and TUI contribution with command-palette creation |
+| `plugins/notes` | First-party Notes feature | SQLite-backed Markdown notes, versioned item lookup service, removal/change events, and TUI contribution with command-palette creation; CLI editing uses `VISUAL` or `EDITOR` |
+| `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution with command-palette capture |
 | `plugins/links` | First-party Links feature | SQLite-backed directed item relations, backlinks, file/URL references, service-validated endpoints, item-removal cleanup, and TUI contribution |
 | `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; shared CLI command and keyboard-driven TUI results view |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |

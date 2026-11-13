@@ -12,7 +12,7 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, View, ViewAction};
 
 enum InputMode {
     Title { id: Option<IdeaId>, value: String },
@@ -192,6 +192,26 @@ impl View for IdeasView {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
         frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+    }
+
+    fn command_palette_actions(&self) -> Vec<ViewAction> {
+        vec![ViewAction::new(
+            "capture",
+            "Capture idea",
+            "Quickly record an idea",
+        )]
+    }
+
+    fn activate_command_palette_action(&mut self, id: &str) -> bool {
+        if id != "capture" {
+            return false;
+        }
+        self.input_mode = Some(InputMode::Title {
+            id: None,
+            value: String::new(),
+        });
+        self.status = None;
+        true
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {
