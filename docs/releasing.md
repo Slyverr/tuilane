@@ -11,7 +11,7 @@ Use [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html): `MAJOR.MIN
 - **Patch:** a release of suitable compatible fixes or maintenance changes, without a new milestone.
 - Pre-releases (`-alpha.N`, `-beta.N`, `-rc.N`) are optional only when distributing an actual prerelease; they are not a substitute for a completed milestone.
 - A commit type is **not** an automatic version bump. A `fix` does not require an immediate release; a `feat` may accumulate toward a milestone.
-- Version targets in the roadmap are **proposals**. Acceptance criteria and maintainer approval determine whether a release happens; no invented release dates or artificial commit counts.
+- Roadmap chapter versions are the intended releases for those milestones. A request to implement a chapter through completion authorizes its release-preparation commit and annotated target tag once the chapter acceptance criteria and release checklist pass. If a gate fails, do not release; continue development and revise the target when needed. No invented release dates or artificial commit counts.
 
 Before `v1.0.0`, formally stabilized interfaces must be explicitly identified; all other interfaces may change. Document breaking changes even during `0.x`.
 
@@ -89,7 +89,7 @@ Tag the exact validated, release-ready commit reachable from `main` after any me
 
 ## 4. Release checklist
 
-A maintainer must explicitly approve release preparation and publication.
+Completing an authorized roadmap chapter includes preparing and tagging its target release after all checks below pass. Ordinary feature work, fixes, documentation tasks, or incomplete chapters do not authorize a release. Publishing crates.io packages or creating a GitHub Release remains a separate distribution action.
 
 1. **Scope:** Confirm the intended milestone's acceptance criteria (in `ROADMAP.md` and the active specification) or the patch's fixes; confirm required issues/PRs and user feedback are resolved.
 2. **Compatibility:** Review supported APIs/CLI/serialization, migration paths, database backup/recovery, security implications, and known limitations where applicable.
@@ -108,7 +108,7 @@ A maintainer must explicitly approve release preparation and publication.
    Add actual CLI/TUI smoke tests, restore/migration tests, packaging checks, and supported-target builds as the corresponding features exist.
 5. **Tag readiness:** Confirm `git status` is clean, the tag doesn't already exist, all release metadata agrees, and the commit is on/reachable from `main`.
 6. **Release commit:** Major/minor requires a dedicated preparation commit; patch normally does not. Validate again when version/metadata changed.
-7. **Tag and push:** Create the annotated tag. Pushing tags and release publishing require explicit maintainer authorization.
+7. **Tag and push:** Create the annotated tag for a completed chapter release. Push the branch and tag when the task authorizes GitHub submission; do not force-push or move a tag. Crates.io or GitHub Release publication requires configured permissions and explicit authorization.
 8. **Distribution:** Only after configured publishing checks pass, publish selected Cargo packages and, where supported, attach verified binary artifacts to a GitHub Release.
 9. **Post-release:** Verify the installed package/binaries and their reported versions, link release notes, and record any follow-up issues. Published versions are immutable.
 

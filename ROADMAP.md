@@ -123,4 +123,4 @@ All targets are **proposed** until implementation evidence and the actual versio
 - Add a detailed specification for an active milestone only when this roadmap lacks needed scope detail. Keep detailed engineering tasks in GitHub Issues, not duplicate checklists here.
 - Do not mark a chapter complete or update user-facing README claims based on plans alone. Cross-check code, tests, issues, CI and release tags.
 - When an implementation differs from the plan for a good reason, update the authoritative roadmap and architecture/ADR rather than accumulating contradictory descriptions.
-- Releasing is separately authorized and governed by [docs/releasing.md](docs/releasing.md).
+- Completing an authorized chapter includes its target release commit and annotated tag after acceptance criteria and release checks pass; follow [docs/releasing.md](docs/releasing.md). A chapter never implies `v1.0.0` readiness.
