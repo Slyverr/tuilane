@@ -78,6 +78,24 @@ enum CliCommand {
         #[command(subcommand)]
         command: LinkCliCommand,
     },
+    /// Create or restore a portable local data backup.
+    Backup {
+        #[command(subcommand)]
+        command: BackupCliCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BackupCliCommand {
+    /// Write a standalone SQLite backup to a new file.
+    Create { path: PathBuf },
+    /// Replace workspace data from a backup after explicit confirmation.
+    Restore {
+        path: PathBuf,
+        /// Confirm that current workspace data should be replaced.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -230,6 +248,7 @@ fn main() {
         Some(CliCommand::Note { command }) => run_note_command(command),
         Some(CliCommand::Idea { command }) => run_idea_command(command),
         Some(CliCommand::Link { command }) => run_link_command(command),
+        Some(CliCommand::Backup { command }) => run_backup_command(command),
         None => run_workspace(),
     };
 
@@ -237,6 +256,27 @@ fn main() {
         eprintln!("tuilane: {error}");
         process::exit(1);
     }
+}
+
+fn run_backup_command(command: BackupCliCommand) -> Result<(), Box<dyn Error>> {
+    let database = SqliteDatabase::open(database_path()?)?;
+    match command {
+        BackupCliCommand::Create { path } => {
+            database.backup_to(&path)?;
+            println!("Created backup: {}", path.display());
+        }
+        BackupCliCommand::Restore { path, yes } => {
+            if !yes {
+                return Err(io::Error::other(
+                    "restoring replaces all workspace data; pass --yes after verifying the backup",
+                )
+                .into());
+            }
+            database.restore_from(&path)?;
+            println!("Restored workspace data from {}", path.display());
+        }
+    }
+    Ok(())
 }
 
 fn run_workspace() -> Result<(), Box<dyn Error>> {

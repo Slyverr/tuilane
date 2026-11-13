@@ -5,6 +5,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 ## [Unreleased]
 
 - Add a keyboard command palette for switching registered views and running workspace actions.
+- Add standalone SQLite backup creation and confirmed restore commands.
 
 ## [0.4.0] - 2026-11-13
 

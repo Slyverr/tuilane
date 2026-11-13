@@ -193,6 +193,92 @@ fn task_cli_rejects_invalid_dates_and_incomplete_updates() {
     );
 }
 
+#[test]
+fn backup_roundtrip_restores_workspace_data_and_requires_confirmation() {
+    let data_directory = TestDataDirectory::new();
+    let task = run_tuilane_with_data(
+        &["task", "create", "--title", "Backup candidate"],
+        &data_directory.0,
+    );
+    let task_id = output_id(&task);
+    let project = run_tuilane_with_data(
+        &["project", "create", "--title", "Backup project"],
+        &data_directory.0,
+    );
+    let project_id = output_id(&project);
+    let task_ref = format!("task:{task_id}");
+    let project_ref = format!("project:{project_id}");
+    let link = run_tuilane_with_data(&["link", "add", &task_ref, &project_ref], &data_directory.0);
+    assert!(link.status.success());
+
+    let backup_path = data_directory.0.join("workspace-backup.sqlite3");
+    let backup = run_tuilane_with_data(
+        &["backup", "create", backup_path.to_str().unwrap()],
+        &data_directory.0,
+    );
+    assert!(backup.status.success());
+    assert!(backup_path.is_file());
+
+    let update = run_tuilane_with_data(
+        &[
+            "task",
+            "update",
+            &task_id,
+            "--title",
+            "Changed after backup",
+        ],
+        &data_directory.0,
+    );
+    assert!(update.status.success());
+    let additional = run_tuilane_with_data(
+        &[
+            "idea",
+            "create",
+            "--title",
+            "Should disappear after restore",
+        ],
+        &data_directory.0,
+    );
+    assert!(additional.status.success());
+
+    let unconfirmed = run_tuilane_with_data(
+        &["backup", "restore", backup_path.to_str().unwrap()],
+        &data_directory.0,
+    );
+    assert_eq!(unconfirmed.status.code(), Some(1));
+    assert!(
+        String::from_utf8(unconfirmed.stderr)
+            .unwrap()
+            .contains("pass --yes")
+    );
+    let current = run_tuilane_with_data(&["task", "show", &task_id], &data_directory.0);
+    assert!(
+        String::from_utf8(current.stdout)
+            .unwrap()
+            .contains("Changed after backup")
+    );
+
+    let restore = run_tuilane_with_data(
+        &["backup", "restore", backup_path.to_str().unwrap(), "--yes"],
+        &data_directory.0,
+    );
+    assert!(restore.status.success());
+    let restored = run_tuilane_with_data(&["task", "show", &task_id], &data_directory.0);
+    assert!(
+        String::from_utf8(restored.stdout)
+            .unwrap()
+            .contains("Backup candidate")
+    );
+    let relations = run_tuilane_with_data(&["link", "list", &task_ref], &data_directory.0);
+    assert!(
+        String::from_utf8(relations.stdout)
+            .unwrap()
+            .contains("Backup project")
+    );
+    let ideas = run_tuilane_with_data(&["idea", "list"], &data_directory.0);
+    assert_eq!(ideas.stdout, b"No ideas.\n");
+}
+
 #[cfg(unix)]
 #[test]
 fn note_cli_edits_markdown_and_keeps_content_when_editor_fails() {
