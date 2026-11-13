@@ -4,6 +4,11 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+- Add host-mediated command descriptors, scoped permissions, previews and confirmation, payload-free execution receipts, and cooperative cancellation.
+- Add atomic bulk task completion for up to 100 unchanged task snapshots.
+
 ## [0.5.0] - 2026-11-13
 
 - Add command-palette quick-create actions, full-text search, item-kind filters, and persistent saved search views.

@@ -31,7 +31,7 @@ Legacy prototype behavior or data should only be ported through tracked, validat
 | CH-03 · `v0.3.0` | Calendar and plugin composition | Calendar reads dated tasks through broker, works with Tasks disabled |
 | CH-04 · `v0.4.0` | Projects, Notes, Ideas and links | Idea ↔ note ↔ task ↔ project relations survive restart and edits |
 | CH-05 · `v0.5.0` | Daily UX, search, personalization | Keyboard-driven capture, palette, filters, saved views, export/restore |
-| CH-06 · `v0.6.0` | Agent-ready command contracts | Schemas, scoped access, previews/confirmation, denial tests; no LLM required |
+| CH-06 · `v0.6.0` | Agent-ready command contracts | Descriptors, scoped caller permissions, previews/confirmation, receipts, cancellation, and safe bulk operations; no LLM required |
 | CH-07 · `v0.7.0` | Optional assistant and prompt UI | Assistant can propose approved operations; offline use unaffected |
 | CH-08 · `v0.8.0` | Usable alpha and recovery | Clean install, reliable vault backup/restore, terminal fallback, migration checks |
 | CH-09 · `v0.9.0` | External runtime feasibility | Measured Wasm/WIT isolation/performance spike with explicit go/no-go |
@@ -73,7 +73,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-04. Inbox/quick capture, command palette, FTS search, filters, saved views, keymaps/themes/layout presets, portable exports and basic backups. **Verify:** small terminal navigation, export/restore roundtrip, invalid configuration diagnostics. **Exclude:** arbitrary layout DSL, sync and marketplace.
 
-### CH-06 · candidate v0.6.0 — Agent-compatible commands
+### CH-06 · v0.6.0 — Agent-compatible commands
 
 **Depends:** CH-02 and CH-05. Make commands discoverable with input/output/effect descriptions, caller identity, scoped permissions, previews/confirmation, receipts, cancellation and safe bulk operations. **Verify:** synthetic untrusted caller attempts permitted and denied actions without direct storage bypass. **Exclude:** an embedded LLM or autonomous background agent.
 
