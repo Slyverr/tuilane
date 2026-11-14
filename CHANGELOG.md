@@ -6,6 +6,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 - Add a pinned Nix flake for Linux builds, profile installation, and development.
 - Enable `j`/`k` alongside arrow keys for workspace view navigation.
+- Add read-only `tuilane doctor` checks for configuration and local database health.
 
 ## [0.7.0] - 2026-11-14
 

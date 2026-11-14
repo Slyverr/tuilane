@@ -24,12 +24,22 @@ pub struct SqliteDatabase {
     path: Option<PathBuf>,
 }
 
+/// Read-only result of inspecting a local tuilane database path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DatabaseInspection {
+    /// No database file exists at the requested path.
+    Missing,
+    /// The database passed SQLite integrity and format-version checks.
+    Healthy { format_version: i64 },
+}
+
 /// Failure while opening or using the SQLite database.
 #[derive(Debug)]
 pub enum StorageError {
     Io(io::Error),
     Sqlite(rusqlite::Error),
     Poisoned,
+    InvalidDatabase(String),
     InvalidBackup(String),
     UnsupportedFormatVersion(i64),
     BackupDestinationIsDatabase,
@@ -45,6 +55,9 @@ impl std::fmt::Display for StorageError {
             Self::Io(error) => write!(formatter, "database filesystem error: {error}"),
             Self::Sqlite(error) => write!(formatter, "SQLite error: {error}"),
             Self::Poisoned => formatter.write_str("SQLite connection lock is unavailable"),
+            Self::InvalidDatabase(reason) => {
+                write!(formatter, "invalid tuilane database: {reason}")
+            }
             Self::InvalidBackup(reason) => write!(formatter, "invalid tuilane backup: {reason}"),
             Self::UnsupportedFormatVersion(version) => write!(
                 formatter,
@@ -68,7 +81,8 @@ impl std::error::Error for StorageError {
             Self::Sqlite(error) => Some(error),
             Self::RestoreRecovery { restore, .. } => Some(restore.as_ref()),
             Self::Poisoned => None,
-            Self::InvalidBackup(_)
+            Self::InvalidDatabase(_)
+            | Self::InvalidBackup(_)
             | Self::UnsupportedFormatVersion(_)
             | Self::BackupDestinationIsDatabase => None,
         }
@@ -91,6 +105,27 @@ impl<T> From<PoisonError<T>> for StorageError {
     fn from(_: PoisonError<T>) -> Self {
         Self::Poisoned
     }
+}
+
+/// Inspects an existing database without creating or modifying files.
+pub fn inspect_database(path: impl AsRef<Path>) -> Result<DatabaseInspection, StorageError> {
+    let path = path.as_ref();
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => {
+            return Err(StorageError::InvalidDatabase(
+                "database path is not a regular file".to_owned(),
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(DatabaseInspection::Missing);
+        }
+        Err(error) => return Err(StorageError::Io(error)),
+    }
+
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let format_version = validate_database(&connection)?;
+    Ok(DatabaseInspection::Healthy { format_version })
 }
 
 impl SqliteDatabase {
@@ -242,11 +277,19 @@ fn initialize_storage_metadata(connection: &Connection) -> Result<(), StorageErr
 
 fn open_valid_backup(path: &Path) -> Result<Connection, StorageError> {
     let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    validate_database(&connection).map_err(|error| match error {
+        StorageError::InvalidDatabase(reason) => StorageError::InvalidBackup(reason),
+        error => error,
+    })?;
+    Ok(connection)
+}
+
+fn validate_database(connection: &Connection) -> Result<i64, StorageError> {
     let integrity: String = connection
         .query_row("PRAGMA quick_check", [], |row| row.get(0))
-        .map_err(|error| StorageError::InvalidBackup(error.to_string()))?;
+        .map_err(|error| StorageError::InvalidDatabase(error.to_string()))?;
     if integrity != "ok" {
-        return Err(StorageError::InvalidBackup(integrity));
+        return Err(StorageError::InvalidDatabase(integrity));
     }
     let version: i64 = connection
         .query_row(
@@ -254,11 +297,11 @@ fn open_valid_backup(path: &Path) -> Result<Connection, StorageError> {
             [],
             |row| row.get(0),
         )
-        .map_err(|error| StorageError::InvalidBackup(error.to_string()))?;
+        .map_err(|error| StorageError::InvalidDatabase(error.to_string()))?;
     if version != STORAGE_FORMAT_VERSION {
         return Err(StorageError::UnsupportedFormatVersion(version));
     }
-    Ok(connection)
+    Ok(version)
 }
 
 fn copy_database(source: &Connection, destination: &mut Connection) -> rusqlite::Result<()> {
@@ -336,6 +379,45 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn inspection_reports_missing_database_without_creating_it() {
+        let directory = TestDirectory::new();
+        let database_path = directory.path("not-created/workspace.sqlite3");
+
+        assert_eq!(
+            inspect_database(&database_path).unwrap(),
+            DatabaseInspection::Missing
+        );
+        assert!(!database_path.exists());
+        assert!(!database_path.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn inspection_reports_healthy_database_format() {
+        let directory = TestDirectory::new();
+        let database_path = directory.path("workspace.sqlite3");
+        drop(SqliteDatabase::open(&database_path).unwrap());
+
+        assert_eq!(
+            inspect_database(&database_path).unwrap(),
+            DatabaseInspection::Healthy { format_version: 1 }
+        );
+    }
+
+    #[test]
+    fn inspection_rejects_damaged_database_without_modifying_it() {
+        let directory = TestDirectory::new();
+        let database_path = directory.path("damaged.sqlite3");
+        let contents = b"not a SQLite database";
+        fs::write(&database_path, contents).unwrap();
+
+        assert!(matches!(
+            inspect_database(&database_path),
+            Err(StorageError::Sqlite(_)) | Err(StorageError::InvalidDatabase(_))
+        ));
+        assert_eq!(fs::read(database_path).unwrap(), contents);
     }
 
     #[test]

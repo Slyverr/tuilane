@@ -53,6 +53,26 @@ fn run_tuilane_with_config(args: &[&str], config_path: &Path) -> Output {
         .expect("failed to run tuilane")
 }
 
+fn run_tuilane_with_data_and_config(
+    args: &[&str],
+    data_directory: &Path,
+    config_path: &Path,
+) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_tuilane"))
+        .args(args)
+        .env("TUILANE_DATA_DIR", data_directory)
+        .env("TUILANE_CONFIG", config_path)
+        .stdin(Stdio::null())
+        .output()
+        .expect("failed to run tuilane")
+}
+
+fn valid_config_path(directory: &TestDataDirectory) -> PathBuf {
+    let path = directory.0.join("tuilane.toml");
+    fs::write(&path, "version = 1\n").expect("write valid configuration file");
+    path
+}
+
 #[test]
 fn no_arguments_requires_an_interactive_terminal() {
     let output = run_tuilane(&[]);
@@ -71,6 +91,7 @@ fn help_flag_displays_usage_and_application_description() {
     assert!(output.status.success());
     assert!(stdout.contains("Usage: tuilane"));
     assert!(stdout.contains("A local-first, modular, plugin-driven terminal workspace"));
+    assert!(stdout.contains("doctor"));
     assert!(output.stderr.is_empty());
 }
 
@@ -125,6 +146,62 @@ fn config_check_reports_invalid_values_and_unknown_fields() {
             .expect("error output should be UTF-8")
             .contains("unknown field")
     );
+}
+
+#[test]
+fn doctor_reports_missing_database_without_creating_it() {
+    let directory = TestDataDirectory::new();
+    let data_directory = directory.0.join("not-created");
+    let config_path = valid_config_path(&directory);
+
+    let output = run_tuilane_with_data_and_config(&["doctor"], &data_directory, &config_path);
+    let stdout = String::from_utf8(output.stdout).expect("doctor output should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Configuration is valid"));
+    assert!(stdout.contains("Database: not initialized"));
+    assert!(!data_directory.exists());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn doctor_reports_healthy_database_after_a_cli_write() {
+    let directory = TestDataDirectory::new();
+    let data_directory = directory.0.join("data");
+    fs::create_dir(&data_directory).expect("create data directory");
+    let config_path = valid_config_path(&directory);
+
+    let create = run_tuilane_with_data(
+        &["task", "create", "--title", "Diagnose local storage"],
+        &data_directory,
+    );
+    assert!(create.status.success());
+
+    let output = run_tuilane_with_data_and_config(&["doctor"], &data_directory, &config_path);
+    let stdout = String::from_utf8(output.stdout).expect("doctor output should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Database: healthy"));
+    assert!(stdout.contains("format version 1"));
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn doctor_fails_on_damaged_database_without_modifying_it() {
+    let directory = TestDataDirectory::new();
+    let data_directory = directory.0.join("data");
+    fs::create_dir(&data_directory).expect("create data directory");
+    let database_path = data_directory.join("tuilane.sqlite3");
+    let damaged_contents = b"not a SQLite database";
+    fs::write(&database_path, damaged_contents).expect("write damaged database");
+    let config_path = valid_config_path(&directory);
+
+    let output = run_tuilane_with_data_and_config(&["doctor"], &data_directory, &config_path);
+    let stderr = String::from_utf8(output.stderr).expect("error output should be UTF-8");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("database"));
+    assert_eq!(fs::read(database_path).unwrap(), damaged_contents);
 }
 
 #[test]

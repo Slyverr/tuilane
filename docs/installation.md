@@ -32,6 +32,12 @@ The flake pins Nixpkgs in `flake.lock`, so builds and development tools use the
 same recorded Nixpkgs revision. `nix build` evaluates the package from the
 current repository source; a clean checkout includes all files tracked by Git.
 
+## Diagnose problems
+
+Run `tuilane doctor` to validate the active configuration and check local
+database integrity and format version. The check opens existing storage
+read-only and reports an uninitialized workspace without creating its database.
+
 ## Cargo
 
 Install the stable Rust toolchain selected by [`rust-toolchain.toml`](../rust-toolchain.toml),

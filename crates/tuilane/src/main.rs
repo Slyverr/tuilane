@@ -42,7 +42,7 @@ use tuilane_plugin_api::tasks::{
 use tuilane_plugin_api::{CommandPermission, ViewDescriptor, ViewId};
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_search::{SearchPlugin, SearchView};
-use tuilane_storage::SqliteDatabase;
+use tuilane_storage::{DatabaseInspection, SqliteDatabase, inspect_database};
 use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
 
@@ -112,6 +112,8 @@ enum CliCommand {
         #[command(subcommand)]
         command: ConfigCliCommand,
     },
+    /// Check local configuration and database health.
+    Doctor,
 }
 
 #[derive(Debug, Subcommand)]
@@ -300,6 +302,7 @@ fn main() {
         Some(CliCommand::Search { query, kind, save }) => run_search_command(query, kind, save),
         Some(CliCommand::SavedSearch { command }) => run_saved_search_command(command),
         Some(CliCommand::Config { command }) => run_config_command(command),
+        Some(CliCommand::Doctor) => run_doctor(),
         None => run_workspace(),
     };
 
@@ -413,6 +416,29 @@ fn run_saved_search_command(command: SavedSearchCliCommand) -> Result<(), Box<dy
 fn run_config_command(command: ConfigCliCommand) -> Result<(), Box<dyn Error>> {
     match command {
         ConfigCliCommand::Check { path } => config::check_config(path)?,
+    }
+    Ok(())
+}
+
+fn run_doctor() -> Result<(), Box<dyn Error>> {
+    config::check_config(None)?;
+
+    let path = database_path()?;
+    let inspection = inspect_database(&path).map_err(|error| {
+        io::Error::other(format!(
+            "database {} failed validation: {error}",
+            path.display()
+        ))
+    })?;
+    match inspection {
+        DatabaseInspection::Missing => println!(
+            "Database: not initialized at {} (it will be created on first use).",
+            path.display()
+        ),
+        DatabaseInspection::Healthy { format_version } => println!(
+            "Database: healthy at {} (format version {format_version}).",
+            path.display()
+        ),
     }
     Ok(())
 }
