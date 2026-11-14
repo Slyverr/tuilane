@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Slyverr/tuilane/security/advisories/new
+    about: Use private vulnerability reporting when it is enabled; do not post sensitive details publicly.

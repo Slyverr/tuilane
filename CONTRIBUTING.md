@@ -116,7 +116,9 @@ Standard trailers include `Refs: #24`, `Fixes: #42`, `Closes: #31`, and genuine 
 
 ## Reporting issues and vulnerabilities
 
-Use GitHub issues for ordinary bugs and proposals; include reproduction steps, environment, actual and expected behavior, and relevant sanitized logs. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md), **not** in public issues.
+Use the GitHub issue forms for bugs, feature proposals, and real-world workflow feedback. Include the tuilane version, platform, and installation method where relevant; describe what you tried and what happened. Remove private paths, credentials, personal data, and vault contents from logs or screenshots.
+
+Maintainers triage reports by checking whether they are reproducible, identifying affected behavior and compatibility, and linking accepted work to the relevant roadmap milestone. Reports that need more information should remain explicit about what is missing; do not mark a milestone complete based only on internal tests or agent validation. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md), **not** in public issues.
 
 ## Releases
 

@@ -1,0 +1,39 @@
+name: Feature proposal
+description: Propose a user-facing workflow or capability
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Describe the problem and desired outcome. Please avoid prescribing a
+        large implementation before the need and scope are understood.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Explain the workflow or problem this would improve.
+    validations:
+      required: true
+  - type: textarea
+    id: current_workflow
+    attributes:
+      label: Current workflow or workaround
+      description: How do you handle this today, if at all?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should become easier or possible?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include relevant platform or compatibility needs, if known.
+    validations:
+      required: false

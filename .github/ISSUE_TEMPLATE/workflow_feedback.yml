@@ -1,0 +1,48 @@
+name: Workflow feedback
+description: Share real-world usability, reliability, or compatibility feedback
+title: "[Feedback]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Feedback from actual workflows helps identify issues that automated
+        tests cannot. Do not include credentials, private paths, personal data,
+        or database contents.
+  - type: input
+    id: version
+    attributes:
+      label: tuilane version
+      description: Include the output of `tuilane --version`, if available.
+      placeholder: tuilane 0.x.y
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment and installation method
+      description: Operating system, terminal if relevant, and how tuilane was installed.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow tried
+      description: What were you trying to accomplish? Mention integrations or plugins involved, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What worked and what did not?
+      description: Include friction, confusing behavior, reliability or performance issues, and expected versus actual results.
+    validations:
+      required: true
+  - type: textarea
+    id: improvements
+    attributes:
+      label: What would improve this workflow?
+      description: Suggestions are welcome; an implementation plan is not required.
+    validations:
+      required: false

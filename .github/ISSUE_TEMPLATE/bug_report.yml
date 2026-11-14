@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem in tuilane
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not include credentials, personal data, private filesystem paths, or
+        database contents. Report security vulnerabilities through the private
+        process in SECURITY.md instead.
+  - type: input
+    id: version
+    attributes:
+      label: tuilane version
+      description: Include the output of `tuilane --version`, if available.
+      placeholder: tuilane 0.x.y
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system and version, terminal (for TUI issues), and installation method.
+      placeholder: Linux distribution, terminal emulator, Nix profile or other install method
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest sequence that reliably reproduces the problem.
+      placeholder: |
+        1. Run ...
+        2. Choose ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Paste sanitized error output. Remove private paths and data.
+      render: text
+    validations:
+      required: false
