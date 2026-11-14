@@ -72,7 +72,7 @@ jobs:
         run: |
           cargo build -p tuilane --locked
           python3 scripts/check-terminal-lifecycle.py target/debug/tuilane
-      - name: Check release archive reproducibility and contents
+      - name: Check release archive reproducibility and clean install
         run: |
           set -euo pipefail
           artifacts=$(mktemp -d)
