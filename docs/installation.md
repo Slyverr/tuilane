@@ -5,7 +5,8 @@ For new version tags, CI is configured to produce a checksummed
 `x86_64-unknown-linux-gnu` archive as a temporary GitHub Actions artifact.
 These artifacts are not published GitHub Releases or package-manager
 releases. The Nix flake defines packages for `x86_64-linux` and
-`aarch64-linux`; its build has been verified on `x86_64-linux`.
+`aarch64-linux`; CI builds and profile-installs both packages on native
+x86_64 and ARM64 runners.
 
 ## Linux release archive
 

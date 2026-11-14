@@ -99,11 +99,28 @@ jobs:
         run: nix develop .#runtime-evaluation -c scripts/check-runtime-evaluation.sh
       - name: Validate the external plugin SDK
         run: nix develop .#runtime-evaluation -c scripts/check-plugin-sdk.sh
+
+  nix-package:
+    name: Nix package (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
       - name: Build and install the Nix package
+        env:
+          PACKAGE_ATTR: .#packages.${{ matrix.system }}.tuilane
         run: |
-          nix build --no-link .#tuilane
+          nix build --no-link "$PACKAGE_ATTR"
           profile="$RUNNER_TEMP/tuilane-profile"
-          nix profile add --profile "$profile" .#tuilane
+          nix profile add --profile "$profile" "$PACKAGE_ATTR"
           "$profile/bin/tuilane" --version
 
   release-artifact:
@@ -112,6 +129,7 @@ jobs:
     needs:
       - workspace
       - runtime-evaluation
+      - nix-package
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
