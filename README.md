@@ -15,6 +15,8 @@ cargo test --workspace
 
 For installation and Nix builds, see [installation](docs/installation.md). The [plugin SDK guide](docs/plugin-sdk.md) explains the current beta contract, while the [roadmap](ROADMAP.md) describes planned work. See [configuration](docs/configuration.md) for local settings and [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
 
+Report bugs or share real-world workflow feedback through [GitHub Issues](https://github.com/Slyverr/tuilane/issues/new/choose).
+
 ## License
 
 tuilane is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. See those files for the license terms.
