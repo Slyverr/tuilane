@@ -205,6 +205,39 @@ fn doctor_fails_on_damaged_database_without_modifying_it() {
 }
 
 #[test]
+fn plugin_list_reports_an_incompatible_api_version() {
+    let directory = TestDataDirectory::new();
+    let plugin_directory = directory
+        .0
+        .join("plugins/installed/org.example.incompatible");
+    fs::create_dir_all(&plugin_directory).expect("create installed plugin directory");
+    fs::write(
+        plugin_directory.join("manifest.toml"),
+        r#"
+manifest-version = 1
+id = "org.example.incompatible"
+name = "Incompatible plugin"
+version = "0.1.0"
+api-version = "99.0.0"
+component = "plugin.wasm"
+"#,
+    )
+    .expect("write incompatible plugin manifest");
+
+    let output = run_tuilane_with_data(&["plugin", "list"], &directory.0);
+    let stdout = String::from_utf8(output.stdout).expect("plugin output should be UTF-8");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("org.example.incompatible"));
+    assert!(stdout.contains("compatibility error:"));
+    assert!(stdout.contains("plugin API version 99.0.0 is incompatible"));
+}
+
+#[test]
 fn unknown_argument_returns_a_usage_error() {
     let output = run_tuilane(&["--unknown"]);
     let stderr = String::from_utf8(output.stderr).expect("error output should be UTF-8");
