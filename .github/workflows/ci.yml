@@ -72,6 +72,19 @@ jobs:
         run: |
           cargo build -p tuilane --locked
           python3 scripts/check-terminal-lifecycle.py target/debug/tuilane
+      - name: Check release archive reproducibility and contents
+        run: |
+          set -euo pipefail
+          artifacts=$(mktemp -d)
+          trap 'rm -rf -- "$artifacts"' EXIT
+          source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          SOURCE_DATE_EPOCH="$source_date_epoch" \
+            scripts/package-release.sh x86_64-unknown-linux-gnu target/debug/tuilane "$artifacts/first"
+          SOURCE_DATE_EPOCH="$source_date_epoch" \
+            scripts/package-release.sh x86_64-unknown-linux-gnu target/debug/tuilane "$artifacts/second"
+          cmp "$artifacts/first"/*.tar.gz "$artifacts/second"/*.tar.gz
+          cmp "$artifacts/first"/*.sha256 "$artifacts/second"/*.sha256
+          scripts/check-release-package.sh "$artifacts/first"/*.tar.gz
 
   runtime-evaluation:
     name: External Wasm runtime and plugin SDK
@@ -86,3 +99,63 @@ jobs:
         run: nix develop .#runtime-evaluation -c scripts/check-runtime-evaluation.sh
       - name: Validate the external plugin SDK
         run: nix develop .#runtime-evaluation -c scripts/check-plugin-sdk.sh
+      - name: Build and install the Nix package
+        run: |
+          nix build --no-link .#tuilane
+          profile="$RUNNER_TEMP/tuilane-profile"
+          nix profile add --profile "$profile" .#tuilane
+          "$profile/bin/tuilane" --version
+
+  release-artifact:
+    name: Linux release archive
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - workspace
+      - runtime-evaluation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Find the previous version tag
+        id: previous
+        run: |
+          previous_tag=$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)
+          echo "tag=$previous_tag" >> "$GITHUB_OUTPUT"
+      - name: Build previous version for upgrade validation
+        if: steps.previous.outputs.tag != ''
+        env:
+          PREVIOUS_TAG: ${{ steps.previous.outputs.tag }}
+        run: |
+          previous_source="$RUNNER_TEMP/tuilane-previous"
+          mkdir -p "$previous_source"
+          git archive "$PREVIOUS_TAG" | tar -x -C "$previous_source"
+          CARGO_TARGET_DIR="$RUNNER_TEMP/tuilane-previous-target" \
+            cargo build --manifest-path "$previous_source/Cargo.toml" \
+              --package tuilane --release --locked
+      - name: Build release binary
+        run: cargo build --package tuilane --release --locked
+      - name: Package and validate release archive
+        run: |
+          source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          SOURCE_DATE_EPOCH="$source_date_epoch" \
+            scripts/package-release.sh x86_64-unknown-linux-gnu \
+              target/release/tuilane dist
+          scripts/check-release-package.sh dist/*.tar.gz
+      - name: Verify upgrade preserves user data
+        if: steps.previous.outputs.tag != ''
+        env:
+          PREVIOUS_TAG: ${{ steps.previous.outputs.tag }}
+        run: |
+          scripts/check-release-upgrade.sh \
+            "$RUNNER_TEMP/tuilane-previous-target/release/tuilane" \
+            target/release/tuilane
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuilane-${{ github.ref_name }}-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

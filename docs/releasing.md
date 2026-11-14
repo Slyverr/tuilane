@@ -137,21 +137,32 @@ A publishable application package cannot rely on **path-only, unpublished regist
 
 Early version tags may remain **source/GitHub-only milestones** until meaningful installable packages, publication ownership and the complete dependency graph are ready. Do not label those tags as crates.io releases. This avoids publishing scaffolding only to satisfy a version number.
 
-## 6. GitHub Actions release automation (target design)
+## 6. GitHub Actions release automation
 
-**Target:** a pushed, authorized `v*` tag triggers release checks, then conditionally publishes crates.io packages and creates a GitHub Release with prebuilt artifacts for explicitly supported targets. **Do not assume this automation exists until the workflow is inspected and its behavior tested.**
+The current [CI workflow](../.github/workflows/ci.yml) validates version tags
+against the workspace version. For future version-tag pushes, it builds a
+checksummed `x86_64-unknown-linux-gnu` archive, verifies the archive, and tests
+that a task created by the previous tagged binary remains readable after
+replacing it.
+The archive is uploaded as a GitHub Actions artifact with a 30-day retention
+period. This does not create a GitHub Release or publish Cargo packages.
 
-Required automation properties:
+**Future target:** a separately authorized publishing step may attach validated
+artifacts to a GitHub Release and publish selected crates.io packages after
+their package checks pass. **Do not treat the temporary Actions artifact as a
+published release.**
 
-- Validate the complete tag as SemVer (not merely matching the `v*` glob), its referenced commit, and the synchronized workspace versions.
+Required properties for future publication automation:
+
+- Validate the complete tag as SemVer (not merely matching the `v*` glob), its referenced commit, and the synchronized workspace versions before publication.
 - Separate ordinary PR/branch CI from publication permissions.
 - Re-run release validation from the tagged source, including `cargo package`/publish checks.
 - Require maintainer-controlled approval or a protected publishing environment for irreversible publication; keep credentials scoped to the publishing step. Prefer supported short-lived authentication over long-lived credentials when available.
 - Publish only the intended packages, in correct order. Avoid re-publishing existing immutable versions on workflow reruns.
-- Build/upload only actually supported and tested target artifacts. Verify checksums and release metadata when implemented.
+- Attach only actually supported and tested target artifacts. Verify checksums and release metadata before publication.
 - On failure, report which steps completed (including any irreversibly published crates) and avoid claiming success.
 
-**Not part of this documentation package:** changing `.github/workflows/ci.yml`, registering crates.io credentials, or activating package publication. Those require inspection of real repository source and maintainer-controlled external configuration.
+**Not implemented:** registering crates.io credentials or activating package publication. Those require maintainer-controlled external configuration and explicit release authorization.
 
 ## 7. Relationship to progress tracking
 

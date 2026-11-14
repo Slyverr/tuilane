@@ -6,6 +6,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ### Changed
 
+- Provide reproducible, checksummed Linux archives and validate task data across upgrades.
 - Open on an overview of the shared command, storage, service, event, and view foundations.
 - Remove the redundant full-width header and add a resizable Views panel with padded three-line entries.
 - Highlight the selected view across the full navigation block.

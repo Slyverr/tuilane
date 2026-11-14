@@ -1,9 +1,34 @@
 # Installation
 
-Tuilane is currently built from source; release binaries and package-manager
-releases are not yet provided. The flake defines Nix builds for `x86_64-linux`
-and `aarch64-linux` (verified here on `x86_64-linux`). Cargo builds work on
-systems with a supported Rust toolchain and native linker.
+Tuilane can be built from source with Cargo or installed through the Nix flake.
+For new version tags, CI is configured to produce a checksummed
+`x86_64-unknown-linux-gnu` archive as a temporary GitHub Actions artifact.
+These artifacts are not published GitHub Releases or package-manager
+releases. The Nix flake defines packages for `x86_64-linux` and
+`aarch64-linux`; its build has been verified on `x86_64-linux`.
+
+## Linux release archive
+
+For a new version tag, download its archive and checksum from the CI workflow
+run's **Artifacts** section. The archive contains the executable, README,
+changelog, build information, and both license files.
+The binary targets x86_64 Linux with glibc; systems with an incompatible glibc
+can use the Nix package or build from source.
+
+Verify and install the archive, replacing only the executable during upgrades:
+
+```sh
+archive=tuilane-VERSION-x86_64-unknown-linux-gnu.tar.gz
+sha256sum --check "$archive.sha256"
+tar -xzf "$archive"
+install -Dm755 "${archive%.tar.gz}/bin/tuilane" "$HOME/.local/bin/tuilane"
+tuilane --version
+tuilane doctor
+```
+
+Keep the application data directory when upgrading. The executable stores its
+database and plugin state separately from the installation path. `tuilane
+doctor` checks existing storage without modifying it.
 
 ## Nix
 
