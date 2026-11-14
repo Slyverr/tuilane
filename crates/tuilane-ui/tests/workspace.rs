@@ -132,8 +132,14 @@ fn registered_views_navigate_and_can_be_removed() {
 fn default_keymap_moves_between_views_with_j_and_k() {
     let mut workspace = workspace_with_two_views();
 
+    workspace.handle_key(key(KeyCode::Char('k')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+
     workspace.handle_key(key(KeyCode::Char('j')));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    workspace.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+
     workspace.handle_key(key(KeyCode::Char('k')));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
 }

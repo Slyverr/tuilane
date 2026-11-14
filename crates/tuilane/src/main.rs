@@ -14,8 +14,10 @@ use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
 use ratatui::{
     Frame,
-    layout::Rect,
-    widgets::{Paragraph, Wrap},
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 use tuilane_assistant::AssistantView;
 use tuilane_calendar::CalendarView;
@@ -541,6 +543,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     let config = config::load_application_config()?;
     let runtime = Runtime::open()?;
     let mut workspace = Workspace::with_config(config.workspace);
+    workspace.register_view(OverviewView::new())?;
     workspace.register_view(TasksView::new(runtime.commands.clone()))?;
     workspace.register_view(CalendarView::new(
         Local::now().date_naive(),
@@ -584,8 +587,6 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
             caller,
         ))?;
     }
-    workspace.register_view(OverviewView::new())?;
-    workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;
     Ok(())
 }
@@ -1100,7 +1101,7 @@ impl OverviewView {
             descriptor: ViewDescriptor::new(
                 ViewId::new("overview").expect("static view identifier is valid"),
                 "Overview",
-                "A small example view registered by the application",
+                "A quick map of your local workspace",
             ),
         }
     }
@@ -1116,64 +1117,157 @@ impl View for OverviewView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            Paragraph::new(
-                "The tuilane workspace shell is running.\n\nThis view is a minimal example of an independently registered contribution.",
-            )
-            .wrap(Wrap { trim: true }),
-            area,
-        );
+        if area.width < 56 || area.height < 14 {
+            let lines = Text::from(vec![
+                Line::from(Span::styled(
+                    "Your local workspace",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from("j/k switch views · ? help"),
+                Line::from("✓ Tasks · ▦ Calendar · ▰ Projects"),
+                Line::from("✎ Notes · ✦ Ideas · ↗ Links"),
+                Line::from("⌕ Search · ◇ Plugins"),
+            ]);
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
+            return;
+        }
+
+        let [welcome_area, feature_area] =
+            Layout::vertical([Constraint::Length(5), Constraint::Min(1)]).areas(area);
+        let welcome = Paragraph::new(Text::from(vec![
+            Line::from(Span::styled(
+                "Your workspace, in one place",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from("Tasks, plans, notes, and ideas stay together on your device."),
+            Line::from("Use j/k to move between views · ? for help"),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .wrap(Wrap { trim: true });
+        frame.render_widget(welcome, welcome_area);
+
+        let features = [
+            ("✓", "Tasks", "Capture and track work", Color::Green),
+            ("▦", "Calendar", "See upcoming dates", Color::Yellow),
+            ("▰", "Projects", "Group work by outcome", Color::LightBlue),
+            ("✎", "Notes", "Keep useful context", Color::LightMagenta),
+            ("✦", "Ideas", "Save sparks for later", Color::LightYellow),
+            ("↗", "Links", "Connect related items", Color::LightCyan),
+            ("⌕", "Search", "Find things across views", Color::LightGreen),
+            (
+                "◇",
+                "Plugins",
+                "Install and manage extensions",
+                Color::LightMagenta,
+            ),
+        ];
+        let columns = if feature_area.width >= 84 { 3 } else { 2 };
+        let rows = features.len().div_ceil(columns);
+        let row_constraints = vec![Constraint::Ratio(1, rows as u32); rows];
+        let row_areas = Layout::vertical(row_constraints).split(feature_area);
+        for (row_index, row_area) in row_areas.iter().enumerate() {
+            let first = row_index * columns;
+            let count = (features.len() - first).min(columns);
+            let column_constraints = vec![Constraint::Ratio(1, count as u32); count];
+            let column_areas = Layout::horizontal(column_constraints).split(*row_area);
+            for (feature, card_area) in features
+                .iter()
+                .skip(first)
+                .take(count)
+                .zip(column_areas.iter())
+            {
+                render_feature_card(frame, *card_area, *feature);
+            }
+        }
     }
 
     fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
         frame.render_widget(
-            Paragraph::new("Overview provides this contextual panel.").wrap(Wrap { trim: true }),
+            Paragraph::new(Text::from(vec![
+                Line::from("Navigate views with j/k."),
+                Line::from("Move through lists with ↑/↓."),
+                Line::from("Open actions with Ctrl-P."),
+                Line::from("Press ? for all shortcuts."),
+            ]))
+            .wrap(Wrap { trim: true }),
             area,
         );
         true
     }
 }
 
-struct ShortcutsView {
-    descriptor: ViewDescriptor,
+fn render_feature_card(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    (icon, title, description, color): (&str, &str, &str, Color),
+) {
+    let title = Line::from(vec![
+        Span::styled(
+            icon,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
+    ]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color))
+        .title(title);
+    frame.render_widget(
+        Paragraph::new(description)
+            .block(block)
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
-impl ShortcutsView {
-    fn new() -> Self {
-        Self {
-            descriptor: ViewDescriptor::new(
-                ViewId::new("shortcuts").expect("static view identifier is valid"),
-                "Shortcuts",
-                "Keyboard navigation reference",
-            ),
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use super::OverviewView;
+    use tuilane_ui::View;
+
+    #[test]
+    fn overview_renders_feature_icons_and_navigation_guidance_at_common_widths() {
+        for (width, height) in [(120, 36), (58, 22), (38, 6)] {
+            let mut view = OverviewView::new();
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    view.render(frame, area);
+                })
+                .unwrap();
+
+            let text = terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(
+                text.contains("Your workspace, in one place")
+                    || text.contains("Your local workspace")
+            );
+            assert!(text.contains("j/k"));
+            assert!(text.contains("✓ Tasks"));
+            assert!(text.contains("▦ Calendar"));
+            if width >= 56 && height >= 14 {
+                assert!(text.contains("Find things across views"));
+            } else {
+                assert!(text.contains("⌕ Search"));
+            }
         }
-    }
-}
-
-impl View for ShortcutsView {
-    fn descriptor(&self) -> &ViewDescriptor {
-        &self.descriptor
-    }
-
-    fn navigation_icon(&self) -> &'static str {
-        "⌘"
-    }
-
-    fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            Paragraph::new(
-                "j                   Next view\nk                   Previous view\n↑/↓                 Move within the focused list\nTab / Shift-Tab     Move focus\nCtrl-P              Open command palette\n                     Search actions and create items\n/ in Search         Search items\nf in Search         Cycle item-kind filter\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
-            ),
-            area,
-        );
-    }
-
-    fn render_drawer(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
-        frame.render_widget(
-            Paragraph::new("The drawer is an optional view contribution.")
-                .wrap(Wrap { trim: true }),
-            area,
-        );
-        true
     }
 }

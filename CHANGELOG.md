@@ -6,10 +6,12 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ### Changed
 
-- Add clearer workspace navigation icons and key hints, with `j`/`k` reserved for switching views and arrow keys for in-view lists.
+- Open the workspace on an icon-led overview and remove the duplicate Shortcuts view.
+- Use rounded panel borders and label the Views panel with its navigation keys.
 
 ### Fixed
 
+- Keep `j`/`k` navigation within the view list so `k` at the first view does not jump to the last view.
 - Allow `k` and `j` to reach workspace navigation from Notes, Ideas, and Links while browsing their lists.
 
 ## [0.10.0] - 2026-11-14

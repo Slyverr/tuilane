@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
@@ -364,7 +364,7 @@ impl Workspace {
             })
             .collect::<Vec<_>>();
         let block = Self::panel_block(
-            "Views",
+            "Views · j/k",
             self.focus == FocusArea::Navigation,
             self.config.theme(),
         );
@@ -453,7 +453,7 @@ impl Workspace {
         frame.render_widget(Clear, overlay);
         let text = Text::from(vec![
             Line::from("Workspace keys"),
-            Line::from("j  Next view     k  Previous view"),
+            Line::from("j  Next view     k  Previous view (stops at the ends)"),
             Line::from("↑/↓  Move a list; switch views when Views is focused"),
             Line::from("Tab / Shift-Tab  Move focus between visible panels"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
@@ -665,6 +665,7 @@ impl Workspace {
         let title = title.into();
         Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(theme.panel_style(focused))
             .title_style(theme.panel_style(focused))
             .title(title)
@@ -772,18 +773,14 @@ impl Workspace {
     }
 
     fn select_previous(&mut self) {
-        if let Some(index) = self.selected.filter(|_| !self.views.is_empty()) {
-            self.selected = Some(if index == 0 {
-                self.views.len() - 1
-            } else {
-                index - 1
-            });
+        if let Some(index) = self.selected.filter(|index| *index > 0) {
+            self.selected = Some(index - 1);
         }
     }
 
     fn select_next(&mut self) {
-        if let Some(index) = self.selected.filter(|_| !self.views.is_empty()) {
-            self.selected = Some((index + 1) % self.views.len());
+        if let Some(index) = self.selected.filter(|index| *index + 1 < self.views.len()) {
+            self.selected = Some(index + 1);
         }
     }
 }
