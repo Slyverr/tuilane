@@ -21,19 +21,19 @@ Startup medians are from five independent engine, component-load, and instance-c
 
 | Measurement | Result |
 |---|---:|
-| Wasmtime engine creation, median | 10.41 µs |
-| Component compile/load, median | 30.64 ms |
-| Component instance creation, median | 67.60 µs |
-| Cold end-to-end startup, median | 30.71 ms |
-| Process RSS before runtime initialization | 3,336 KiB |
-| Process RSS after engine and component load | 14,640 KiB |
-| Direct dispatcher call, p50 / p95 | 140 ns / 141 ns |
-| Wasm component call, p50 / p95 | 622 ns / 652 ns |
+| Wasmtime engine creation, median | 9.78 µs |
+| Component compile/load, median | 30.82 ms |
+| Component instance creation, median | 65.06 µs |
+| Cold end-to-end startup, median | 30.89 ms |
+| Process RSS before runtime initialization | 3,384 KiB |
+| Process RSS after engine and component load | 14,496 KiB |
+| Direct dispatcher call, p50 / p95 | 140 ns / 190 ns |
+| Wasm component call, p50 / p95 | 631 ns / 672 ns |
 | Guest linear memory before / after 1 MiB allocation | 1,179,648 / 2,293,760 bytes |
 | Guest memory after rejected 64 MiB allocation | 2,293,760 bytes |
-| Fuel exhaustion / epoch interruption | 14.28 µs / 20.07 ms |
+| Fuel exhaustion / epoch interruption | 13.96 µs / 20.08 ms |
 
-The measured component boundary added 482 ns at p50 and 511 ns at p95 for this small operation, about 4.4 times the direct dispatch latency. The absolute cost was below one microsecond in this run. Component loading dominated cold startup; the Wasmtime engine and component added 11,304 KiB to the observed process RSS before instance creation. The guest's configured linear-memory limit was 32 MiB.
+The measured component boundary added 491 ns at p50 and 482 ns at p95 for this small operation, about 4.5 times the direct dispatch p50. The absolute cost was below one microsecond in this run. Component loading dominated cold startup; the Wasmtime engine and component added 11,112 KiB to the observed process RSS before instance creation. The guest's configured linear-memory limit was 32 MiB.
 
 The checks confirmed that the component imports only `tuilane:runtime-evaluation/host`, receives no caller identity from guest input, and has no WASI filesystem or network imports. An ungranted write was rejected by `CommandDispatcher` before its handler ran. Fuel limits and an epoch deadline interrupted an infinite guest loop. A trap, fuel exhaustion, and epoch interruption each left that instance unusable, so recovery requires discarding it and creating a fresh instance; that recovery path passed.
 
