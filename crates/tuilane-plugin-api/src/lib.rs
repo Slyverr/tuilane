@@ -6,6 +6,7 @@ pub mod ideas;
 pub mod items;
 pub mod links;
 pub mod notes;
+pub mod plugin;
 pub mod projects;
 pub mod search;
 pub mod tasks;

@@ -1,0 +1,19 @@
+[package]
+name = "tuilane-plugin-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host-managed WebAssembly component loading for tuilane plugins"
+
+[dependencies]
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+tuilane-plugin-api.workspace = true
+uuid.workspace = true
+wasmtime.workspace = true
+
+[lints]
+workspace = true

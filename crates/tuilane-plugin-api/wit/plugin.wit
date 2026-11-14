@@ -1,0 +1,70 @@
+package tuilane:plugin@0.1.0;
+
+interface host {
+    enum host-error {
+        denied,
+        unknown-capability,
+        invalid-request,
+        failed,
+    }
+
+    request: func(capability: string, request: string) -> result<string, host-error>;
+}
+
+interface plugin {
+    enum plugin-error {
+        unknown-command,
+        unknown-view,
+        unknown-action,
+        invalid-request,
+        permission-denied,
+        failed,
+    }
+
+    enum effect {
+        read-only,
+        mutating,
+        destructive,
+    }
+
+    record plugin-metadata {
+        id: string,
+        api-version: string,
+    }
+
+    record command {
+        id: string,
+        summary: string,
+        effect: effect,
+    }
+
+    record view {
+        id: string,
+        title: string,
+        description: string,
+    }
+
+    record action {
+        id: string,
+        title: string,
+        description: string,
+    }
+
+    record view-model {
+        title: string,
+        lines: list<string>,
+        actions: list<action>,
+    }
+
+    metadata: func() -> plugin-metadata;
+    commands: func() -> list<command>;
+    views: func() -> list<view>;
+    invoke: func(command-id: string, request: string) -> result<string, plugin-error>;
+    render: func(view-id: string) -> result<view-model, plugin-error>;
+    activate: func(view-id: string, action-id: string, request: string) -> result<view-model, plugin-error>;
+}
+
+world plugin-guest {
+    import host;
+    export plugin;
+}

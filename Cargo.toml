@@ -6,6 +6,7 @@ members = [
     "crates/tuilane-ui",
     "crates/tuilane-storage",
     "crates/tuilane-plugin-api",
+    "crates/tuilane-plugin-runtime",
     "plugins/tasks",
     "plugins/calendar",
     "plugins/projects",
@@ -34,6 +35,9 @@ features = ["clock", "std"]
 [workspace.dependencies.crossterm]
 version = "0.29.0"
 
+[workspace.dependencies.semver]
+version = "1.0.28"
+
 [workspace.dependencies.clap]
 version = "4.6.7"
 default-features = false
@@ -61,6 +65,9 @@ features = ["derive"]
 [workspace.dependencies.serde_json]
 version = "1.0.154"
 
+[workspace.dependencies.thiserror]
+version = "2.0.21"
+
 [workspace.dependencies.tokio]
 version = "1.54.1"
 default-features = false
@@ -74,6 +81,9 @@ path = "crates/tuilane-core"
 
 [workspace.dependencies.tuilane-plugin-api]
 path = "crates/tuilane-plugin-api"
+
+[workspace.dependencies.tuilane-plugin-runtime]
+path = "crates/tuilane-plugin-runtime"
 
 [workspace.dependencies.tuilane-storage]
 path = "crates/tuilane-storage"
@@ -108,6 +118,11 @@ path = "plugins/search"
 [workspace.dependencies.uuid]
 version = "1.29.0"
 features = ["v4"]
+
+[workspace.dependencies.wasmtime]
+version = "49.0.0"
+default-features = false
+features = ["anyhow", "component-model", "cranelift", "runtime", "std"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

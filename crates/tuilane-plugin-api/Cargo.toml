@@ -5,5 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "Shared extension contracts for tuilane"
 
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+
 [lints]
 workspace = true

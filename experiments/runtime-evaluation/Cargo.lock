@@ -867,6 +867,9 @@ dependencies = [
 [[package]]
 name = "tuilane-plugin-api"
 version = "0.9.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "tuilane-runtime-evaluation-guest"
