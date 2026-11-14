@@ -10,7 +10,7 @@ use ratatui::{
 use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
 
-use crate::{KeymapPreset, LayoutPreset, ThemePreset, View, WorkspaceConfig};
+use crate::{LayoutPreset, ThemePreset, View, WorkspaceConfig};
 
 /// The shell region currently receiving keyboard navigation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -255,10 +255,8 @@ impl Workspace {
             KeyCode::BackTab => self.advance_focus(true),
             KeyCode::Up if self.focus == FocusArea::Navigation => self.select_previous(),
             KeyCode::Down if self.focus == FocusArea::Navigation => self.select_next(),
-            KeyCode::Char('k') if self.config.keymap() == KeymapPreset::Vim => {
-                self.select_previous()
-            }
-            KeyCode::Char('j') if self.config.keymap() == KeymapPreset::Vim => self.select_next(),
+            KeyCode::Char('k') => self.select_previous(),
+            KeyCode::Char('j') => self.select_next(),
             KeyCode::Up => self.select_previous(),
             KeyCode::Down => self.select_next(),
             _ => {}
@@ -301,15 +299,10 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
 
-        let navigation_keys = if self.config.keymap() == KeymapPreset::Vim {
-            "↑/↓ j/k views"
-        } else {
-            "↑/↓ views"
-        };
         frame.render_widget(
-            Paragraph::new(format!(
-                "Tab focus  {navigation_keys}  Ctrl-P commands  i inspector  d drawer  ? help  q quit"
-            )),
+            Paragraph::new(
+                "Tab focus  ↑/↓ j/k views  Ctrl-P commands  i inspector  d drawer  ? help  q quit",
+            ),
             layout.status,
         );
 
@@ -428,14 +421,9 @@ impl Workspace {
             height,
         };
         frame.render_widget(Clear, overlay);
-        let navigation_keys = if self.config.keymap() == KeymapPreset::Vim {
-            "↑/↓ or j/k  Move views when unhandled"
-        } else {
-            "↑/↓  Move views when unhandled"
-        };
         let text = Text::from(vec![
             Line::from("Workspace keys"),
-            Line::from(navigation_keys),
+            Line::from("↑/↓ or j/k  Move views when unhandled"),
             Line::from("Tab / Shift-Tab  Move focus between visible panels"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
             Line::from("Ctrl-P  Open the command palette"),

@@ -8,10 +8,10 @@ version = 1
 [ui]
 theme = "default" # default or high-contrast
 layout = "balanced" # balanced or focus
-keymap = "default" # default or vim
+keymap = "default" # default or vim; both support arrows and j/k for view navigation
 ```
 
-The `balanced` layout shows navigation when terminal width allows it; `focus` hides the navigation panel. The `high-contrast` theme uses brighter shell text and yellow accents. Use Up/Down to select views when the active view does not handle those keys; the `vim` keymap also uses `j` and `k` for this.
+The `balanced` layout shows navigation when terminal width allows it; `focus` hides the navigation panel. The `high-contrast` theme uses brighter shell text and yellow accents. Use Up/Down or `j`/`k` to select views when the active view does not handle those keys. Both accepted keymap values use the same view-navigation keys.
 
 ## Optional local assistant
 

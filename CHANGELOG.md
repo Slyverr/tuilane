@@ -5,6 +5,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 ## [Unreleased]
 
 - Add a pinned Nix flake for Linux builds, profile installation, and development.
+- Enable `j`/`k` alongside arrow keys for workspace view navigation.
 
 ## [0.7.0] - 2026-11-14
 

@@ -60,13 +60,13 @@ impl LayoutPreset {
     }
 }
 
-/// Registered-view navigation key preset.
+/// Configured view-navigation key preset name.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum KeymapPreset {
-    /// Use the standard shell keys.
+    /// Use the standard shell key preset.
     #[default]
     Default,
-    /// Also use j/k to move between registered views when a view does not consume them.
+    /// Keep accepting the Vim preset name from existing configuration files.
     Vim,
 }
 
