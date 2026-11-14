@@ -200,10 +200,14 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
     themed_terminal
         .draw(|frame| themed_workspace.render(frame))
         .unwrap();
-    assert_eq!(
-        themed_terminal.backend().buffer().cell((1, 2)).unwrap().fg,
-        Color::Yellow
-    );
+    let selected_icon = themed_terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .find(|cell| cell.symbol() == "◇")
+        .expect("selected view icon is rendered");
+    assert_eq!(selected_icon.fg, Color::Yellow);
 }
 
 #[test]
@@ -214,9 +218,11 @@ fn workspace_navigation_shows_view_icons_and_colored_key_hints() {
 
     let cells = terminal.backend().buffer().content();
     let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
-    assert!(text.contains("◆ tuilane"));
+    assert!(text.contains("Views  [ ] width"));
     assert!(text.contains("◇ Overview"));
+    assert!(text.contains("test view contribution"));
     assert!(text.contains("j/k Views"));
+    assert!(!text.contains("◆ tuilane"));
     assert!(!text.contains("[focus]"));
 
     let icon = cells
@@ -273,8 +279,28 @@ fn workspace_renders_on_wide_and_compact_terminals() {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("Overview"));
-        assert!(text.contains("tuilane"));
+        assert!(text.contains("Views"));
     }
+}
+
+#[test]
+fn sidebar_can_shrink_without_hiding_its_resize_hint() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_key(key(KeyCode::Char('[')));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let text = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("Resize"));
+    assert_eq!(buffer[(27, 0)].symbol(), "╮");
 }
 
 #[test]
@@ -334,7 +360,8 @@ fn shell_provides_fallbacks_for_missing_panel_contributions() {
     assert!(text.contains("No contextual details for"));
     assert!(text.contains("this view."));
     assert!(text.contains("No supplemental content for this view."));
-    assert!(text.contains("Workspace keys"));
+    assert!(text.contains("Next view"));
+    assert!(text.contains("Resize Views"));
 }
 
 #[test]

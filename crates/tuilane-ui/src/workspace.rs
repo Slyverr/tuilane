@@ -4,7 +4,6 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
@@ -12,6 +11,12 @@ use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
 
 use crate::{LayoutPreset, ThemePreset, View, WorkspaceConfig};
+
+const DEFAULT_NAVIGATION_WIDTH: u16 = 32;
+const MIN_NAVIGATION_WIDTH: u16 = 20;
+const MAX_NAVIGATION_WIDTH: u16 = 44;
+const NAVIGATION_WIDTH_STEP: u16 = 4;
+const NAVIGATION_ENTRY_HEIGHT: u16 = 3;
 
 /// The shell region currently receiving keyboard navigation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -53,6 +58,7 @@ pub struct Workspace {
     palette_query: String,
     palette_selected: usize,
     should_quit: bool,
+    navigation_width: u16,
     config: WorkspaceConfig,
     last_layout: ShellLayout,
 }
@@ -95,6 +101,7 @@ impl Default for Workspace {
             palette_query: String::new(),
             palette_selected: 0,
             should_quit: false,
+            navigation_width: DEFAULT_NAVIGATION_WIDTH,
             config: WorkspaceConfig::default(),
             last_layout: ShellLayout::default(),
         }
@@ -238,6 +245,26 @@ impl Workspace {
             return;
         }
 
+        if self.focus == FocusArea::Navigation {
+            match key.code {
+                KeyCode::Char('[') => {
+                    self.navigation_width = self
+                        .navigation_width
+                        .saturating_sub(NAVIGATION_WIDTH_STEP)
+                        .max(MIN_NAVIGATION_WIDTH);
+                    return;
+                }
+                KeyCode::Char(']') => {
+                    self.navigation_width = self
+                        .navigation_width
+                        .saturating_add(NAVIGATION_WIDTH_STEP)
+                        .min(MAX_NAVIGATION_WIDTH);
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         let view_consumed = self
             .selected
             .and_then(|index| self.views.get_mut(index))
@@ -272,35 +299,10 @@ impl Workspace {
             self.inspector_open,
             self.drawer_open,
             self.config.layout(),
+            self.navigation_width,
         );
         self.last_layout = layout.state;
         self.normalize_focus(layout.state);
-
-        let header = self
-            .selected
-            .and_then(|index| self.views.get(index))
-            .map(|view| {
-                Line::from(vec![
-                    Span::styled("◆ tuilane", self.config.theme().header_style()),
-                    Span::styled("   /   ", self.config.theme().muted_style()),
-                    Span::styled(
-                        view.value().navigation_icon(),
-                        self.config.theme().accent_style(),
-                    ),
-                    Span::raw(" "),
-                    Span::styled(
-                        view.descriptor().title(),
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            })
-            .unwrap_or_else(|| {
-                Line::from(vec![Span::styled(
-                    "◆ tuilane  /  Workspace",
-                    self.config.theme().header_style(),
-                )])
-            });
-        frame.render_widget(Paragraph::new(header), layout.header);
 
         if let Some(navigation) = layout.navigation {
             self.render_navigation(frame, navigation);
@@ -313,20 +315,57 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
 
-        let status = Line::from(vec![
-            Span::styled("j/k", self.config.theme().header_style()),
-            Span::styled(" Views   ", self.config.theme().muted_style()),
-            Span::styled("↑/↓", self.config.theme().header_style()),
-            Span::styled(" List   ", self.config.theme().muted_style()),
-            Span::styled("Tab", self.config.theme().header_style()),
-            Span::styled(" Focus   ", self.config.theme().muted_style()),
-            Span::styled("Ctrl-P", self.config.theme().header_style()),
-            Span::styled(" Commands   ", self.config.theme().muted_style()),
-            Span::styled("?", self.config.theme().header_style()),
-            Span::styled(" Help   ", self.config.theme().muted_style()),
-            Span::styled("q", self.config.theme().header_style()),
-            Span::styled(" Quit", self.config.theme().muted_style()),
-        ]);
+        let status = if area.width < 72 && self.focus == FocusArea::Navigation {
+            Line::from(vec![
+                Span::styled("j/k", self.config.theme().header_style()),
+                Span::styled(" Views  ", self.config.theme().muted_style()),
+                Span::styled("[/]", self.config.theme().header_style()),
+                Span::styled(" Resize  ", self.config.theme().muted_style()),
+                Span::styled("?", self.config.theme().header_style()),
+                Span::styled(" Help  ", self.config.theme().muted_style()),
+                Span::styled("q", self.config.theme().header_style()),
+                Span::styled(" Quit", self.config.theme().muted_style()),
+            ])
+        } else if area.width < 72 {
+            Line::from(vec![
+                Span::styled("j/k", self.config.theme().header_style()),
+                Span::styled(" Views  ", self.config.theme().muted_style()),
+                Span::styled("↑/↓", self.config.theme().header_style()),
+                Span::styled(" Lists  ", self.config.theme().muted_style()),
+                Span::styled("?", self.config.theme().header_style()),
+                Span::styled(" Help  ", self.config.theme().muted_style()),
+                Span::styled("q", self.config.theme().header_style()),
+                Span::styled(" Quit", self.config.theme().muted_style()),
+            ])
+        } else if self.focus == FocusArea::Navigation {
+            Line::from(vec![
+                Span::styled("j/k", self.config.theme().header_style()),
+                Span::styled(" Views   ", self.config.theme().muted_style()),
+                Span::styled("[/]", self.config.theme().header_style()),
+                Span::styled(" Resize   ", self.config.theme().muted_style()),
+                Span::styled("Tab", self.config.theme().header_style()),
+                Span::styled(" Focus   ", self.config.theme().muted_style()),
+                Span::styled("?", self.config.theme().header_style()),
+                Span::styled(" Help   ", self.config.theme().muted_style()),
+                Span::styled("q", self.config.theme().header_style()),
+                Span::styled(" Quit", self.config.theme().muted_style()),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("j/k", self.config.theme().header_style()),
+                Span::styled(" Views   ", self.config.theme().muted_style()),
+                Span::styled("↑/↓", self.config.theme().header_style()),
+                Span::styled(" Lists   ", self.config.theme().muted_style()),
+                Span::styled("Tab", self.config.theme().header_style()),
+                Span::styled(" Focus   ", self.config.theme().muted_style()),
+                Span::styled("Ctrl-P", self.config.theme().header_style()),
+                Span::styled(" Actions   ", self.config.theme().muted_style()),
+                Span::styled("?", self.config.theme().header_style()),
+                Span::styled(" Help   ", self.config.theme().muted_style()),
+                Span::styled("q", self.config.theme().header_style()),
+                Span::styled(" Quit", self.config.theme().muted_style()),
+            ])
+        };
         frame.render_widget(Paragraph::new(status), layout.status);
 
         if self.help_open {
@@ -338,33 +377,51 @@ impl Workspace {
     }
 
     fn render_navigation(&self, frame: &mut Frame<'_>, area: Rect) {
-        let items = self
+        let visible_count =
+            (area.height.saturating_sub(2) / NAVIGATION_ENTRY_HEIGHT).max(1) as usize;
+        let selected = self.selected.unwrap_or(0);
+        let first = selected.saturating_sub(visible_count.saturating_sub(1));
+        let description_width = area.width.saturating_sub(6) as usize;
+        let mut items = Vec::with_capacity(visible_count * 3);
+        for (index, view) in self
             .views
             .iter()
             .enumerate()
-            .map(|(index, view)| {
-                let selected = Some(index) == self.selected;
-                let marker = if selected { "› " } else { "  " };
-                Line::from(vec![
-                    Span::styled(marker, self.config.theme().accent_style()),
-                    Span::styled(
-                        view.value().navigation_icon(),
-                        if selected {
-                            self.config.theme().accent_style()
-                        } else {
-                            self.config.theme().muted_style()
-                        },
-                    ),
-                    Span::raw(" "),
-                    Span::styled(
-                        view.descriptor().title(),
-                        self.config.theme().panel_style(selected),
-                    ),
-                ])
-            })
-            .collect::<Vec<_>>();
+            .skip(first)
+            .take(visible_count)
+        {
+            let is_selected = Some(index) == self.selected;
+            let marker = if is_selected { "› " } else { "  " };
+            let title = truncate_navigation_text(
+                view.descriptor().title(),
+                area.width.saturating_sub(6) as usize,
+            );
+            let [description_first, description_second] =
+                wrap_navigation_description(view.descriptor().description(), description_width);
+            items.push(Line::from(vec![
+                Span::styled(marker, self.config.theme().accent_style()),
+                Span::styled(
+                    view.value().navigation_icon(),
+                    if is_selected {
+                        self.config.theme().accent_style()
+                    } else {
+                        self.config.theme().muted_style()
+                    },
+                ),
+                Span::raw(" "),
+                Span::styled(title, self.config.theme().panel_style(is_selected)),
+            ]));
+            items.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(description_first, self.config.theme().muted_style()),
+            ]));
+            items.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(description_second, self.config.theme().muted_style()),
+            ]));
+        }
         let block = Self::panel_block(
-            "Views · j/k",
+            "Views  [ ] width",
             self.focus == FocusArea::Navigation,
             self.config.theme(),
         );
@@ -452,13 +509,11 @@ impl Workspace {
         };
         frame.render_widget(Clear, overlay);
         let text = Text::from(vec![
-            Line::from("Workspace keys"),
             Line::from("j  Next view     k  Previous view (stops at the ends)"),
             Line::from("↑/↓  Move a list; switch views when Views is focused"),
-            Line::from("Tab / Shift-Tab  Move focus between visible panels"),
+            Line::from("Tab  Focus panels     [ / ]  Resize Views"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
-            Line::from("Ctrl-P  Open the command palette"),
-            Line::from("? or Esc  Close this overlay     q  Quit"),
+            Line::from("Ctrl-P  Commands     ?  Close help     q  Quit"),
         ]);
         frame.render_widget(
             Paragraph::new(text)
@@ -676,13 +731,10 @@ impl Workspace {
         inspector_open: bool,
         drawer_open: bool,
         preset: LayoutPreset,
+        navigation_width: u16,
     ) -> ShellRects {
-        let [header, body, status] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
+        let [body, status] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
         let show_drawer = drawer_open && area.height >= 12;
         let (body, drawer) = if show_drawer {
@@ -694,9 +746,11 @@ impl Workspace {
         };
 
         let show_inspector = inspector_open && area.width >= 52;
-        let show_navigation = preset != LayoutPreset::Focus
-            && area.width >= 52
-            && (!show_inspector || area.width >= 84);
+        let navigation_requirement = navigation_width
+            .max(MIN_NAVIGATION_WIDTH)
+            .saturating_add(20)
+            .saturating_add(if show_inspector { 28 } else { 0 });
+        let show_navigation = preset != LayoutPreset::Focus && area.width >= navigation_requirement;
         let state = ShellLayout {
             navigation: show_navigation,
             inspector: show_inspector,
@@ -705,7 +759,7 @@ impl Workspace {
         let (navigation, main, inspector) = match (show_navigation, show_inspector) {
             (true, true) => {
                 let [navigation, main, inspector] = Layout::horizontal([
-                    Constraint::Length(22),
+                    Constraint::Length(navigation_width),
                     Constraint::Min(20),
                     Constraint::Length(28),
                 ])
@@ -714,7 +768,8 @@ impl Workspace {
             }
             (true, false) => {
                 let [navigation, main] =
-                    Layout::horizontal([Constraint::Length(22), Constraint::Min(20)]).areas(body);
+                    Layout::horizontal([Constraint::Length(navigation_width), Constraint::Min(20)])
+                        .areas(body);
                 (Some(navigation), main, None)
             }
             (false, true) => {
@@ -726,7 +781,6 @@ impl Workspace {
         };
 
         ShellRects {
-            header,
             navigation,
             main,
             inspector,
@@ -785,8 +839,66 @@ impl Workspace {
     }
 }
 
+fn truncate_navigation_text(value: &str, max_width: usize) -> String {
+    let character_count = value.chars().count();
+    if character_count <= max_width {
+        return value.to_owned();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    if max_width == 1 {
+        return "…".to_owned();
+    }
+
+    let mut truncated = value.chars().take(max_width - 1).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+fn wrap_navigation_description(value: &str, max_width: usize) -> [String; 2] {
+    let max_width = max_width.max(1);
+    let mut lines = [String::new(), String::new()];
+    let mut line_index = 0;
+    let mut truncated = false;
+
+    for word in value.split_whitespace() {
+        let word_width = word.chars().count();
+        if !lines[line_index].is_empty()
+            && lines[line_index].chars().count() + 1 + word_width > max_width
+        {
+            line_index += 1;
+            if line_index == lines.len() {
+                truncated = true;
+                break;
+            }
+        }
+
+        if word_width > max_width {
+            lines[line_index] = word.chars().take(max_width).collect();
+            truncated = true;
+            break;
+        }
+        if !lines[line_index].is_empty() {
+            lines[line_index].push(' ');
+        }
+        lines[line_index].push_str(word);
+    }
+
+    if truncated {
+        let last = &mut lines[1];
+        if last.is_empty() {
+            last.push('…');
+        } else {
+            *last = last.chars().take(max_width.saturating_sub(1)).collect();
+            last.push('…');
+        }
+    }
+
+    lines
+}
+
 struct ShellRects {
-    header: Rect,
     navigation: Option<Rect>,
     main: Rect,
     inspector: Option<Rect>,
@@ -850,7 +962,13 @@ mod tests {
 
     #[test]
     fn layout_hides_panels_on_small_terminals() {
-        let layout = Workspace::layout(Rect::new(0, 0, 40, 10), true, true, LayoutPreset::Balanced);
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 40, 10),
+            true,
+            true,
+            LayoutPreset::Balanced,
+            DEFAULT_NAVIGATION_WIDTH,
+        );
         assert!(!layout.state.navigation);
         assert!(!layout.state.inspector);
         assert!(!layout.state.drawer);
@@ -858,8 +976,13 @@ mod tests {
 
     #[test]
     fn layout_shows_optional_panels_when_space_allows() {
-        let layout =
-            Workspace::layout(Rect::new(0, 0, 120, 36), true, true, LayoutPreset::Balanced);
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 120, 36),
+            true,
+            true,
+            LayoutPreset::Balanced,
+            DEFAULT_NAVIGATION_WIDTH,
+        );
         assert!(layout.state.navigation);
         assert!(layout.state.inspector);
         assert!(layout.state.drawer);
@@ -867,8 +990,13 @@ mod tests {
 
     #[test]
     fn inspector_uses_the_available_width_before_navigation() {
-        let layout =
-            Workspace::layout(Rect::new(0, 0, 60, 20), true, false, LayoutPreset::Balanced);
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 60, 20),
+            true,
+            false,
+            LayoutPreset::Balanced,
+            DEFAULT_NAVIGATION_WIDTH,
+        );
         assert!(!layout.state.navigation);
         assert!(layout.state.inspector);
     }
@@ -880,5 +1008,39 @@ mod tests {
         workspace.toggle_inspector();
         workspace.advance_focus(false);
         assert_eq!(workspace.focus(), FocusArea::Content);
+    }
+
+    #[test]
+    fn navigation_width_changes_in_bounded_steps_when_navigation_is_focused() {
+        let mut workspace = Workspace::new();
+        workspace.focus = FocusArea::Navigation;
+
+        workspace.handle_key(KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE));
+        assert_eq!(
+            workspace.navigation_width,
+            DEFAULT_NAVIGATION_WIDTH - NAVIGATION_WIDTH_STEP
+        );
+
+        for _ in 0..10 {
+            workspace.handle_key(KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE));
+        }
+        assert_eq!(workspace.navigation_width, MIN_NAVIGATION_WIDTH);
+
+        for _ in 0..10 {
+            workspace.handle_key(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE));
+        }
+        assert_eq!(workspace.navigation_width, MAX_NAVIGATION_WIDTH);
+    }
+
+    #[test]
+    fn navigation_descriptions_wrap_to_two_lines_and_truncate_overflow() {
+        let lines = wrap_navigation_description(
+            "Typed services provide host-mediated access between workspace features",
+            20,
+        );
+
+        assert_eq!(lines[0], "Typed services");
+        assert!(lines[1].ends_with('…'));
+        assert!(lines.iter().all(|line| line.chars().count() <= 20));
     }
 }

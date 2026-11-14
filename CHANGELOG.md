@@ -6,8 +6,9 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ### Changed
 
-- Open the workspace on an icon-led overview and remove the duplicate Shortcuts view.
-- Use rounded panel borders and label the Views panel with its navigation keys.
+- Open on an overview of the shared command, storage, service, event, and view foundations.
+- Remove the redundant full-width header and add a resizable Views panel with three-line entries.
+- Use rounded panel borders and show the Views resizing controls when that panel is focused.
 
 ### Fixed
 

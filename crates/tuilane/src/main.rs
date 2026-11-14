@@ -1120,15 +1120,16 @@ impl View for OverviewView {
         if area.width < 56 || area.height < 14 {
             let lines = Text::from(vec![
                 Line::from(Span::styled(
-                    "Your local workspace",
+                    "Core systems",
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 )),
-                Line::from("j/k switch views · ? help"),
-                Line::from("✓ Tasks · ▦ Calendar · ▰ Projects"),
-                Line::from("✎ Notes · ✦ Ideas · ↗ Links"),
-                Line::from("⌕ Search · ◇ Plugins"),
+                Line::from("⌘ Commands · ▤ Storage"),
+                Line::from("⇄ Services · ◷ Events"),
+                Line::from("▣ Views · ◇ Permissions"),
+                Line::from("j/k views · Tab then [ ] resize"),
+                Line::from("? for help"),
             ]);
             frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
             return;
@@ -1138,13 +1139,13 @@ impl View for OverviewView {
             Layout::vertical([Constraint::Length(5), Constraint::Min(1)]).areas(area);
         let welcome = Paragraph::new(Text::from(vec![
             Line::from(Span::styled(
-                "Your workspace, in one place",
+                "A local workspace built on clear foundations",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from("Tasks, plans, notes, and ideas stay together on your device."),
-            Line::from("Use j/k to move between views · ? for help"),
+            Line::from("The CLI and TUI share validated commands and local storage."),
+            Line::from("Host services, events, and views connect the workspace."),
         ]))
         .block(
             Block::default()
@@ -1155,18 +1156,41 @@ impl View for OverviewView {
         frame.render_widget(welcome, welcome_area);
 
         let features = [
-            ("✓", "Tasks", "Capture and track work", Color::Green),
-            ("▦", "Calendar", "See upcoming dates", Color::Yellow),
-            ("▰", "Projects", "Group work by outcome", Color::LightBlue),
-            ("✎", "Notes", "Keep useful context", Color::LightMagenta),
-            ("✦", "Ideas", "Save sparks for later", Color::LightYellow),
-            ("↗", "Links", "Connect related items", Color::LightCyan),
-            ("⌕", "Search", "Find things across views", Color::LightGreen),
+            (
+                "⌘",
+                "Commands",
+                "CLI and TUI share validated operations",
+                Color::LightCyan,
+            ),
+            (
+                "▤",
+                "Storage",
+                "Local SQLite and versioned migrations",
+                Color::LightBlue,
+            ),
+            (
+                "⇄",
+                "Services",
+                "Typed access brokered by the host",
+                Color::LightGreen,
+            ),
+            (
+                "◷",
+                "Events",
+                "Committed changes notify subscribers",
+                Color::Yellow,
+            ),
+            (
+                "▣",
+                "Views",
+                "The host owns layout, focus, and navigation",
+                Color::LightMagenta,
+            ),
             (
                 "◇",
-                "Plugins",
-                "Install and manage extensions",
-                Color::LightMagenta,
+                "Permissions",
+                "External capabilities need explicit grants",
+                Color::LightCyan,
             ),
         ];
         let columns = if feature_area.width >= 84 { 3 } else { 2 };
@@ -1256,17 +1280,14 @@ mod tests {
                 .iter()
                 .map(|cell| cell.symbol())
                 .collect::<String>();
-            assert!(
-                text.contains("Your workspace, in one place")
-                    || text.contains("Your local workspace")
-            );
-            assert!(text.contains("j/k"));
-            assert!(text.contains("✓ Tasks"));
-            assert!(text.contains("▦ Calendar"));
+            assert!(text.contains("Core systems") || text.contains("clear foundations"));
+            assert!(text.contains("⌘ Commands"));
+            assert!(text.contains("▤ Storage"));
             if width >= 56 && height >= 14 {
-                assert!(text.contains("Find things across views"));
+                assert!(text.contains("Committed"));
+                assert!(text.contains("subscribers"));
             } else {
-                assert!(text.contains("⌕ Search"));
+                assert!(text.contains("⇄ Services"));
             }
         }
     }
