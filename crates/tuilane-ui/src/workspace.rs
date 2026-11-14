@@ -4,7 +4,6 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::Color,
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
@@ -417,13 +416,8 @@ impl Workspace {
     }
 
     fn render_navigation(&self, frame: &mut Frame<'_>, area: Rect) {
-        let title = if self.navigation_collapsed {
-            "Views"
-        } else {
-            "Views  [ ] width"
-        };
         let block = Self::panel_block(
-            title,
+            "Views",
             self.focus == FocusArea::Navigation,
             self.config.theme(),
         );
@@ -446,8 +440,7 @@ impl Workspace {
             let is_selected = Some(index) == self.selected;
             let item_style = self.config.theme().navigation_item_style(is_selected);
             let marker = if is_selected { "› " } else { "  " };
-            let (icon_pattern, icon_color) = navigation_icon(view.descriptor().id().as_str());
-            let title_width = usize::from(inner.width).saturating_sub(6);
+            let title_width = usize::from(inner.width).saturating_sub(2);
             let item_y = inner.y + (index - first) as u16 * NAVIGATION_ENTRY_HEIGHT;
             let item_area = Rect {
                 x: inner.x,
@@ -456,49 +449,32 @@ impl Workspace {
                 height: NAVIGATION_ENTRY_HEIGHT,
             };
             frame.render_widget(Block::default().style(item_style), item_area);
-            let title = if self.navigation_collapsed {
-                String::new()
+            let title = truncate_navigation_text(view.descriptor().title(), title_width);
+            let monogram = navigation_monogram(view.descriptor().id().as_str());
+            let monogram_style = if is_selected {
+                item_style
             } else {
-                truncate_navigation_text(view.descriptor().title(), title_width)
+                self.config.theme().muted_style()
             };
-            let icon_x_offset = if self.navigation_collapsed {
-                inner.width.saturating_sub(3) / 2
-            } else {
-                2
-            };
+            let monogram_offset = inner.width.saturating_sub(monogram.chars().count() as u16) / 2;
             let mut lines = Vec::with_capacity(3);
-            for (row, icon_row) in icon_pattern.iter().enumerate() {
-                let mut spans = Vec::with_capacity(5);
-                if !self.navigation_collapsed {
-                    spans.push(Span::styled(
-                        if row == 1 { marker } else { "  " },
-                        item_style,
-                    ));
-                } else if icon_x_offset > 0 {
-                    spans.push(Span::styled(" ".repeat(icon_x_offset as usize), item_style));
-                }
-                for column in 0..3 {
-                    let pixel = if icon_row & (1 << (2 - column)) != 0 {
-                        let icon_style = if is_selected {
-                            item_style.fg(Color::Black)
-                        } else {
-                            item_style.fg(icon_color)
-                        };
-                        Span::styled("█", icon_style)
+            for row in 0..NAVIGATION_ENTRY_HEIGHT {
+                let line = if row == 1 {
+                    if self.navigation_collapsed {
+                        Line::from(vec![
+                            Span::styled(" ".repeat(monogram_offset as usize), item_style),
+                            Span::styled(monogram.clone(), monogram_style),
+                        ])
                     } else {
-                        Span::styled(" ", item_style)
-                    };
-                    spans.push(pixel);
-                }
-                if !self.navigation_collapsed {
-                    if row == 1 {
-                        spans.push(Span::styled(" ", item_style));
-                        spans.push(Span::styled(title.clone(), item_style));
-                    } else {
-                        spans.push(Span::styled(" ".repeat(title_width + 1), item_style));
+                        Line::from(vec![
+                            Span::styled(marker, item_style),
+                            Span::styled(title.clone(), item_style),
+                        ])
                     }
-                }
-                lines.push(Line::from(spans));
+                } else {
+                    Line::from(Span::styled(" ".repeat(inner.width as usize), item_style))
+                };
+                lines.push(line);
             }
             frame.render_widget(
                 Paragraph::new(Text::from(lines)).style(item_style),
@@ -924,42 +900,11 @@ impl Workspace {
     }
 }
 
-fn navigation_icon(id: &str) -> ([u8; 3], Color) {
-    let (pattern, color) = match id {
-        "overview" => ([0b010, 0b111, 0b101], Color::LightCyan),
-        "tasks" => ([0b001, 0b010, 0b110], Color::LightGreen),
-        "projects" => ([0b101, 0b111, 0b101], Color::LightBlue),
-        "notes" => ([0b111, 0b100, 0b111], Color::LightMagenta),
-        "ideas" => ([0b010, 0b101, 0b010], Color::LightYellow),
-        "calendar" => ([0b111, 0b101, 0b111], Color::Cyan),
-        "links" => ([0b101, 0b010, 0b101], Color::LightBlue),
-        "search" => ([0b110, 0b101, 0b110], Color::LightCyan),
-        "assistant" => ([0b010, 0b111, 0b010], Color::LightMagenta),
-        _ => {
-            let hash = id.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
-                (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
-            });
-            let mut bits = (hash as u16) & 0x01ff;
-            if bits.count_ones() < 3 || bits.count_ones() > 7 {
-                bits ^= 0b001_010_100;
-            }
-            let pattern = [
-                ((bits >> 6) & 0b111) as u8,
-                ((bits >> 3) & 0b111) as u8,
-                (bits & 0b111) as u8,
-            ];
-            let color = match (hash >> 24) % 6 {
-                0 => Color::LightCyan,
-                1 => Color::LightGreen,
-                2 => Color::LightBlue,
-                3 => Color::LightMagenta,
-                4 => Color::LightYellow,
-                _ => Color::Cyan,
-            };
-            (pattern, color)
-        }
-    };
-    (pattern, color)
+fn navigation_monogram(id: &str) -> String {
+    id.chars()
+        .take(2)
+        .map(|character| character.to_ascii_uppercase())
+        .collect()
 }
 
 fn truncate_navigation_text(value: &str, max_width: usize) -> String {

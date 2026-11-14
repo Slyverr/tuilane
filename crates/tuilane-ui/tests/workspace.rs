@@ -223,15 +223,10 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
     themed_terminal
         .draw(|frame| themed_workspace.render(frame))
         .unwrap();
-    let selected_pixel = themed_terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .find(|cell| cell.symbol() == "█")
-        .expect("selected view pixel icon is rendered");
-    assert_eq!(selected_pixel.fg, Color::Black);
-    assert_eq!(selected_pixel.bg, Color::Yellow);
+    let selected_label = &themed_terminal.backend().buffer()[(3, 2)];
+    assert_eq!(selected_label.symbol(), "O");
+    assert_eq!(selected_label.fg, Color::Black);
+    assert_eq!(selected_label.bg, Color::Yellow);
 }
 
 #[test]
@@ -244,8 +239,9 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
         let buffer = terminal.backend().buffer();
         let cells = buffer.content();
         let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
-        assert!(text.contains("Views  [ ] width"));
-        assert!(text.contains("Overview"));
+        assert!(text.contains("Views"));
+        assert!(!text.contains("[ ] width"));
+        assert!(text.contains("› Overview"));
         assert!(text.contains("j/k Views"));
         assert!(!text.contains("test view contribution"));
         assert!(!text.contains("◆ tuilane"));
@@ -263,12 +259,10 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
         assert_eq!(buffer[(1, 1)].symbol(), " ");
         assert_eq!(buffer[(1, 3)].symbol(), " ");
 
-        let icon_pixel = cells
-            .iter()
-            .find(|cell| cell.symbol() == "█")
-            .expect("navigation pixel icon is rendered");
-        assert_eq!(icon_pixel.fg, Color::Black);
-        assert_eq!(icon_pixel.bg, Color::Cyan);
+        let selected_title = &buffer[(3, 2)];
+        assert_eq!(selected_title.symbol(), "O");
+        assert_eq!(selected_title.fg, Color::Black);
+        assert_eq!(selected_title.bg, Color::Cyan);
     }
 
     workspace.handle_key(key(KeyCode::Char('j')));
@@ -298,7 +292,7 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
 }
 
 #[test]
-fn collapsed_navigation_shows_centered_pixel_icons_without_view_labels() {
+fn collapsed_navigation_shows_centered_monograms_without_view_labels() {
     let mut workspace = workspace_with_two_views();
     let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
@@ -312,7 +306,11 @@ fn collapsed_navigation_shows_centered_pixel_icons_without_view_labels() {
         .collect::<String>();
     assert!(sidebar.contains("Views"));
     assert!(!sidebar.contains("Overview"));
-    assert!(sidebar.contains("█"));
+    assert!(sidebar.contains("OV"));
+    assert!(sidebar.contains("AC"));
+    assert!(!sidebar.contains("█"));
+    assert_eq!(buffer[(3, 2)].symbol(), "O");
+    assert_eq!(buffer[(4, 2)].symbol(), "V");
     for y in 1..=3 {
         for x in 1..=7 {
             assert_eq!(buffer[(x, y)].bg, Color::Cyan);

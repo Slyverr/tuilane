@@ -4,6 +4,11 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+### Changed
+
+- Use two-letter view identifiers in the collapsed sidebar and remove decorative pixel icons.
+- Keep the Views panel title to a single label instead of duplicating resize hints there.
+
 ## [0.11.0] - 2026-11-14
 
 ### Added
