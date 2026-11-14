@@ -40,6 +40,7 @@ use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{CommandPermission, ViewDescriptor, ViewId};
+use tuilane_plugin_runtime::PluginManager;
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_search::{SearchPlugin, SearchView};
 use tuilane_storage::{DatabaseInspection, SqliteDatabase, inspect_database};
@@ -47,6 +48,7 @@ use tuilane_tasks::{TasksPlugin, TasksView};
 use tuilane_ui::{View, Workspace, require_interactive_terminal};
 
 mod config;
+mod external_plugins;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -85,6 +87,11 @@ enum CliCommand {
     Link {
         #[command(subcommand)]
         command: LinkCliCommand,
+    },
+    /// Install and manage external plugins.
+    Plugin {
+        #[command(subcommand)]
+        command: external_plugins::PluginCliCommand,
     },
     /// Create or restore a portable local data backup.
     Backup {
@@ -298,6 +305,7 @@ fn main() {
         Some(CliCommand::Note { command }) => run_note_command(command),
         Some(CliCommand::Idea { command }) => run_idea_command(command),
         Some(CliCommand::Link { command }) => run_link_command(command),
+        Some(CliCommand::Plugin { command }) => run_plugin_command(command),
         Some(CliCommand::Backup { command }) => run_backup_command(command),
         Some(CliCommand::Search { query, kind, save }) => run_search_command(query, kind, save),
         Some(CliCommand::SavedSearch { command }) => run_saved_search_command(command),
@@ -328,6 +336,91 @@ fn run_backup_command(command: BackupCliCommand) -> Result<(), Box<dyn Error>> {
             }
             database.restore_from(&path)?;
             println!("Restored workspace data from {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn run_plugin_command(command: external_plugins::PluginCliCommand) -> Result<(), Box<dyn Error>> {
+    let runtime = Runtime::open()?;
+    let mut plugins = runtime.plugins.borrow_mut();
+    match command {
+        external_plugins::PluginCliCommand::List => {
+            let statuses = plugins.list()?;
+            if statuses.is_empty() {
+                println!("No external plugins are installed.");
+            }
+            for plugin in statuses {
+                let state = if plugin.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    plugin.id, plugin.version, state, plugin.name
+                );
+                if let Some(error) = plugin.error {
+                    println!("  compatibility error: {error}");
+                }
+                if !plugin.grants.is_empty() {
+                    println!("  grants: {}", plugin.grants.join(", "));
+                }
+            }
+        }
+        external_plugins::PluginCliCommand::Commands { id } => {
+            for command in plugins.commands(&id)? {
+                let effect = match command.effect {
+                    tuilane_plugin_api::plugin::PluginEffect::ReadOnly => "read-only",
+                    tuilane_plugin_api::plugin::PluginEffect::Mutating => "mutating",
+                    tuilane_plugin_api::plugin::PluginEffect::Destructive => "destructive",
+                };
+                println!("{}\t{}\t{}", command.id, effect, command.summary);
+            }
+        }
+        external_plugins::PluginCliCommand::Permissions { id } => {
+            for service in plugins.services(&id)? {
+                let granted =
+                    plugins.has_permissions(&id, std::slice::from_ref(&service.permission))?;
+                let state = if granted { "granted" } else { "not granted" };
+                println!("{}\t{}\t{}", service.id, service.permission, state);
+            }
+        }
+        external_plugins::PluginCliCommand::Install { bundle } => {
+            let plugin = plugins.install(bundle)?;
+            println!("Installed {} (disabled by default).", plugin);
+        }
+        external_plugins::PluginCliCommand::Enable { id } => {
+            plugins.enable(&id)?;
+            println!("Enabled {id}.");
+        }
+        external_plugins::PluginCliCommand::Disable { id } => {
+            plugins.disable(&id)?;
+            println!("Disabled {id}.");
+        }
+        external_plugins::PluginCliCommand::Grant { id, permission } => {
+            plugins.grant(&id, &permission)?;
+            println!("Granted {permission} to {id}.");
+        }
+        external_plugins::PluginCliCommand::Revoke { id, permission } => {
+            if plugins.revoke(&id, &permission)? {
+                println!("Revoked {permission} from {id}.");
+            } else {
+                println!("{id} did not have {permission}.");
+            }
+        }
+        external_plugins::PluginCliCommand::Uninstall { id } => {
+            plugins.uninstall(&id)?;
+            println!("Uninstalled {id}; plugin data was preserved.");
+        }
+        external_plugins::PluginCliCommand::Call {
+            id,
+            command,
+            request,
+        } => {
+            let response = plugins.invoke(&id, &command, &request)?;
+            let value: serde_json::Value = serde_json::from_str(&response)?;
+            println!("{}", serde_json::to_string_pretty(&value)?);
         }
     }
     Ok(())
@@ -459,6 +552,25 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     workspace.register_view(IdeasView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(LinksView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(SearchView::new(runtime.commands.clone()))?;
+    let load_failures = runtime.plugins.borrow_mut().load_enabled()?;
+    for failure in load_failures {
+        eprintln!(
+            "tuilane: plugin '{}' was not loaded: {}",
+            failure.plugin_id, failure.error
+        );
+    }
+    let plugin_views = runtime.plugins.borrow().views();
+    for view in plugin_views {
+        let plugin_id = view.plugin_id.to_string();
+        match external_plugins::ExternalPluginView::new(view, runtime.plugins.clone()) {
+            Ok(view) => {
+                if let Err(error) = workspace.register_view(view) {
+                    eprintln!("tuilane: could not register plugin view: {error}");
+                }
+            }
+            Err(error) => eprintln!("tuilane: plugin '{plugin_id}' has an invalid view: {error}"),
+        }
+    }
     if let Some(assistant_config) = config.assistant {
         let caller = CommandCallerId::new("assistant.local")?;
         {
@@ -927,6 +1039,7 @@ fn single_line(value: &str) -> String {
 
 struct Runtime {
     commands: Rc<RefCell<CommandDispatcher>>,
+    plugins: Rc<RefCell<PluginManager>>,
     services: Rc<RefCell<ServiceBroker>>,
     events: EventBus,
     _search: SearchPlugin,
@@ -949,8 +1062,14 @@ impl Runtime {
         ideas.register(&mut dispatcher, &mut services.borrow_mut(), events.clone())?;
         links.register(&mut dispatcher, services.clone(), events.clone())?;
         let search = SearchPlugin::register(database, services.clone(), &mut dispatcher, &events)?;
+        let commands = Rc::new(RefCell::new(dispatcher));
+        let plugins = Rc::new(RefCell::new(external_plugins::create_manager(
+            commands.clone(),
+            application_data_dir()?,
+        )));
         Ok(Self {
-            commands: Rc::new(RefCell::new(dispatcher)),
+            commands,
+            plugins,
             services,
             events,
             _search: search,
@@ -959,12 +1078,16 @@ impl Runtime {
 }
 
 fn database_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(application_data_dir()?.join("tuilane.sqlite3"))
+}
+
+fn application_data_dir() -> Result<PathBuf, Box<dyn Error>> {
     if let Some(data_dir) = std::env::var_os("TUILANE_DATA_DIR") {
-        return Ok(PathBuf::from(data_dir).join("tuilane.sqlite3"));
+        return Ok(PathBuf::from(data_dir));
     }
     let directories = ProjectDirs::from("org", "tuilane", "tuilane")
         .ok_or_else(|| io::Error::other("could not determine the application data directory"))?;
-    Ok(directories.data_dir().join("tuilane.sqlite3"))
+    Ok(directories.data_dir().to_owned())
 }
 
 struct OverviewView {
