@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 cargo_target_dir=${CARGO_TARGET_DIR:-"$repo_root/target"}
@@ -11,6 +11,19 @@ wasm_guest="$plugin_target_dir/wasm32-unknown-unknown/release/tuilane_hello_worl
 component="$plugin_target_dir/hello-world.component.wasm"
 binary="$cargo_target_dir/debug/tuilane"
 
+build_sample_component() {
+  local target_directory=$1
+  local component_path=$2
+
+  cargo build --locked --release \
+    --manifest-path examples/plugins/hello-world/Cargo.toml \
+    --target wasm32-unknown-unknown \
+    --target-dir "$target_directory"
+  wasm-tools component new \
+    "$target_directory/wasm32-unknown-unknown/release/tuilane_hello_world_plugin.wasm" \
+    -o "$component_path"
+}
+
 if ! rustup target list --installed --toolchain stable | grep -Fxq wasm32-unknown-unknown; then
   printf '%s\n' 'Missing Rust target wasm32-unknown-unknown.' \
     'Install it with: rustup target add wasm32-unknown-unknown --toolchain stable' >&2
@@ -19,13 +32,17 @@ fi
 
 cargo build -p tuilane --locked
 cargo fmt --manifest-path examples/plugins/hello-world/Cargo.toml --all -- --check
-cargo build --locked --release \
-  --manifest-path examples/plugins/hello-world/Cargo.toml \
-  --target wasm32-unknown-unknown \
-  --target-dir "$plugin_target_dir"
-
 mkdir -p "$bundle_dir"
-wasm-tools component new "$wasm_guest" -o "$component"
+build_sample_component "$plugin_target_dir" "$component"
+
+reproducibility_target_dir="$plugin_target_dir/reproducibility"
+reproducibility_component="$plugin_target_dir/hello-world.reproducible.component.wasm"
+build_sample_component "$reproducibility_target_dir" "$reproducibility_component"
+reproducibility_guest="$reproducibility_target_dir/wasm32-unknown-unknown/release/tuilane_hello_world_plugin.wasm"
+cmp "$wasm_guest" "$reproducibility_guest"
+cmp "$component" "$reproducibility_component"
+printf '%s\n' 'Verified reproducible hello-world plugin component.'
+
 cp examples/plugins/hello-world/manifest.toml "$bundle_dir/manifest.toml"
 cp "$component" "$bundle_dir/plugin.wasm"
 

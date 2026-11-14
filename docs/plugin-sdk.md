@@ -20,7 +20,7 @@ The manifest declares a namespaced plugin ID, plugin and API versions, requested
 nix develop .#runtime-evaluation -c scripts/check-plugin-sdk.sh
 ```
 
-The script builds the guest, converts it into a Wasm component, runs lifecycle and permission tests, then exercises the CLI using temporary application data. It verifies installation, denied access before a grant, service calls after a grant, revocation, disablement, and uninstall data retention.
+The script builds the guest twice in separate target directories and compares both the Wasm module and generated component byte-for-byte. It then runs lifecycle and permission tests and exercises the CLI using temporary application data. Validation covers installation, denied access before a grant, service calls after a grant, revocation, disablement, and uninstall data retention.
 
 To try the generated bundle manually, first build it with the same command, then use:
 
