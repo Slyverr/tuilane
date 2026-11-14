@@ -71,6 +71,12 @@ pub trait View {
         false
     }
 
+    /// Returns whether the workspace should redraw periodically for this view's
+    /// background work. The view must drain completed work during `render`.
+    fn has_background_work(&self) -> bool {
+        false
+    }
+
     /// Returns actions this view contributes to the command palette.
     fn command_palette_actions(&self) -> Vec<ViewAction> {
         Vec::new()

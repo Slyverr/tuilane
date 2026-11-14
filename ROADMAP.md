@@ -17,7 +17,7 @@ Completion is proven by implementation, user-visible behavior, and passing accep
 
 ## Current state and naming
 
-The current baseline is an eleven-member Cargo workspace with a composable terminal shell and first-party Tasks, Calendar, Projects, Notes, Ideas, and Links features in early development. Calendar queries due tasks through the host broker and refreshes after task changes. Projects support durable CRUD through the CLI and TUI. Notes support durable Markdown CRUD, external-editor workflows, stable item lookup, and a TUI view. Ideas support durable capture, lookup, rename, and removal through the CLI and TUI. Links support validated directed relations, backlinks, file/URL references, terminal navigation, and event-driven cleanup after item deletion. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
+The current baseline is a thirteen-member Cargo workspace with a composable terminal shell and first-party Tasks, Calendar, Projects, Notes, Ideas, Links, Search, and optional Assistant features in early development. Calendar queries due tasks through the host broker and refreshes after task changes. Projects support durable CRUD through the CLI and TUI. Notes support durable Markdown CRUD, external-editor workflows, stable item lookup, and a TUI view. Ideas support durable capture, lookup, rename, and removal through the CLI and TUI. Links support validated directed relations, backlinks, file/URL references, terminal navigation, and event-driven cleanup after item deletion. The assistant is disabled by default and uses a configured local model endpoint when enabled. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
 
 Legacy prototype behavior or data should only be ported through tracked, validated tasks after the relevant source/fixtures are available in the repository. Do not depend on private or untracked source locations.
 
@@ -77,9 +77,9 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-02 and CH-05. Make commands discoverable with input/output/effect descriptions, caller identity, scoped permissions, previews/confirmation, receipts, cancellation and safe bulk operations. **Verify:** synthetic untrusted caller attempts permitted and denied actions without direct storage bypass. **Exclude:** an embedded LLM or autonomous background agent.
 
-### CH-07 · candidate v0.7.0 — Optional assistant
+### CH-07 · v0.7.0 — Optional local assistant and prompt UI
 
-**Depends:** CH-06 and CH-01 drawer/overlay. Optional model provider and UI contributions, scoped context, streaming/cancellation, and host-mediated approved tool calls. **Verify:** denial of unauthorized/destructive actions, opt-in use, and working offline without AI. **Exclude:** mandatory subscriptions or unrestricted unattended execution.
+**Depends:** CH-06 and CH-01 drawer/overlay. Add an opt-in local Ollama-compatible provider, scoped task context, streaming/cancellation, and host-mediated approved task tools. **Verify:** denial of unauthorized/destructive actions, visible approval previews, disabled-by-default use, and working offline without a model service. **Exclude:** remote providers, mandatory subscriptions, task deletion, or unrestricted unattended execution.
 
 ### CH-08 · candidate v0.8.0 — Alpha hardening
 

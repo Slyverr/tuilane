@@ -203,6 +203,12 @@ impl Workspace {
         self.should_quit
     }
 
+    fn selected_view_has_background_work(&self) -> bool {
+        self.selected
+            .and_then(|index| self.views.get(index))
+            .is_some_and(|view| view.value().has_background_work())
+    }
+
     /// Routes one key event to the focused shell region.
     pub fn handle_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
@@ -785,7 +791,15 @@ pub fn run(mut workspace: Workspace) -> io::Result<()> {
         'redraw: loop {
             terminal.draw(|frame| workspace.render(frame))?;
             loop {
-                if !event::poll(Duration::from_secs(30))? {
+                let timeout = if workspace.selected_view_has_background_work() {
+                    Duration::from_millis(100)
+                } else {
+                    Duration::from_secs(30)
+                };
+                if !event::poll(timeout)? {
+                    if workspace.selected_view_has_background_work() {
+                        break;
+                    }
                     continue;
                 }
 

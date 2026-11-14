@@ -1,0 +1,20 @@
+[package]
+name = "tuilane-assistant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Optional local assistant for tuilane"
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tuilane-core.workspace = true
+tuilane-plugin-api.workspace = true
+tuilane-ui.workspace = true
+
+[lints]
+workspace = true

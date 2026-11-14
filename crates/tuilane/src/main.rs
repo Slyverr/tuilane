@@ -17,8 +17,9 @@ use ratatui::{
     layout::Rect,
     widgets::{Paragraph, Wrap},
 };
+use tuilane_assistant::AssistantView;
 use tuilane_calendar::CalendarView;
-use tuilane_core::{CommandDispatcher, EventBus, ServiceBroker};
+use tuilane_core::{CommandCallerId, CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_ideas::{IdeasPlugin, IdeasView};
 use tuilane_links::{LinksPlugin, LinksView};
 use tuilane_notes::{NotesPlugin, NotesView};
@@ -38,7 +39,7 @@ use tuilane_plugin_api::search::{
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
-use tuilane_plugin_api::{ViewDescriptor, ViewId};
+use tuilane_plugin_api::{CommandPermission, ViewDescriptor, ViewId};
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_search::{SearchPlugin, SearchView};
 use tuilane_storage::SqliteDatabase;
@@ -418,9 +419,9 @@ fn run_config_command(command: ConfigCliCommand) -> Result<(), Box<dyn Error>> {
 
 fn run_workspace() -> Result<(), Box<dyn Error>> {
     require_interactive_terminal()?;
-    let config = config::load_workspace_config()?;
+    let config = config::load_application_config()?;
     let runtime = Runtime::open()?;
-    let mut workspace = Workspace::with_config(config);
+    let mut workspace = Workspace::with_config(config.workspace);
     workspace.register_view(TasksView::new(runtime.commands.clone()))?;
     workspace.register_view(CalendarView::new(
         Local::now().date_naive(),
@@ -432,6 +433,19 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
     workspace.register_view(IdeasView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(LinksView::new(runtime.commands.clone(), &runtime.events))?;
     workspace.register_view(SearchView::new(runtime.commands.clone()))?;
+    if let Some(assistant_config) = config.assistant {
+        let caller = CommandCallerId::new("assistant.local")?;
+        {
+            let mut commands = runtime.commands.borrow_mut();
+            commands.grant_permission(&caller, CommandPermission::new("tasks.read"));
+            commands.grant_permission(&caller, CommandPermission::new("tasks.write"));
+        }
+        workspace.register_view(AssistantView::new(
+            assistant_config,
+            runtime.commands.clone(),
+            caller,
+        ))?;
+    }
     workspace.register_view(OverviewView::new())?;
     workspace.register_view(ShortcutsView::new())?;
     tuilane_ui::run(workspace)?;

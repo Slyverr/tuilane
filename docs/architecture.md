@@ -4,7 +4,7 @@ This document separates the **documented current baseline** from the **approved 
 
 ## Current baseline (verified in source)
 
-The repository is a twelve-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, link, backup, search, saved-search, and configuration-check commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, Links, and Search views. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. A versioned TOML file selects built-in shell theme, layout, and keymap presets. Task, project, note, idea, relation, and saved-search records use SQLite and persist across process restarts.
+The repository is a thirteen-member Cargo workspace. The `tuilane` executable uses Clap for help, version, task, project, note, idea, link, backup, search, saved-search, and configuration-check commands; it composes the terminal shell, Tasks, Calendar, Projects, Notes, Ideas, Links, Search, and Overview views. When enabled in configuration, it also registers the Assistant view. The shell uses Ratatui and Crossterm; non-interactive startup returns a clear error. A versioned TOML file selects built-in shell theme, layout, and keymap presets. Task, project, note, idea, relation, and saved-search records use SQLite and persist across process restarts.
 
 | Component | Ownership | Current implementation status |
 | --- | --- | --- |
@@ -20,6 +20,7 @@ The repository is a twelve-member Cargo workspace. The `tuilane` executable uses
 | `plugins/ideas` | First-party Ideas feature | SQLite-backed idea capture and rename/delete workflows, versioned item lookup service, removal/change events, and TUI contribution with command-palette capture |
 | `plugins/links` | First-party Links feature | SQLite-backed directed item relations, backlinks, file/URL references, service-validated endpoints, item-removal cleanup, and TUI contribution |
 | `plugins/search` | First-party workspace search | SQLite FTS5 index refreshed from typed item-owner search services after first-party item changes; persistent named queries with optional kind filters; CLI management and TUI save/browse/run flows with kind filtering |
+| `plugins/assistant` | Optional local assistant view and provider adapter | Disabled by default; streams from a configured loopback Ollama-compatible endpoint and exposes bounded task read/create/complete tools through the host command dispatcher; every task change requires preview and confirmation |
 | Other `plugins/*` | Built-in domain feature crates | Planned, created as implementation requires |
 
 The current manifests, source, tests, and CI configuration reflect these statuses. Update this section as implementation changes and tests verify additional behavior.
@@ -32,7 +33,7 @@ The current manifests, source, tests, and CI configuration reflect these statuse
 4. **UI separation:** `tuilane-ui` owns terminal-specific rendering, navigation, focus, input arbitration and lifecycle. Plugin contributions use host-defined slots or public component contracts.
 5. **Storage separation:** `tuilane-storage` owns backend adapter concerns. Domain plugins own business data and migrations; no plugin reads another plugin's private tables.
 6. **Domain ownership:** Built-in tasks, calendar, projects, notes and ideas are distinct Rust feature crates when implemented. They communicate through registered contracts, not direct calls to another plugin's private Rust interfaces.
-7. **One action path:** CLI, TUI and optional agent callers eventually use the same validated command/query dispatch path; no bypasses for convenience.
+7. **One action path:** CLI, TUI and the optional assistant use the same validated command/query dispatch path; no bypasses for convenience.
 8. **Plugin isolation honesty:** Statically linked Rust plugins are trusted code running in the host process; a broker is not a security sandbox. External/untrusted plugins require a verified isolation boundary before granting hostile-code security assurances.
 
 See [coding standards](coding-standards.md), [ROADMAP.md](../ROADMAP.md), and [release policy](releasing.md) for related quality, milestone, and release rules. The architectural boundaries are summarized below.
@@ -115,11 +116,11 @@ The host owns sidebar/navigation, primary content region, contextual inspector, 
 
 ### Local data and persistence
 
-SQLite is the current local transactional store for Tasks, Projects, Notes, Ideas, and Links and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/relations. The storage adapter creates standalone SQLite backups without overwriting existing files and validates database integrity and format metadata before restoring; restore requires explicit CLI confirmation and keeps a recovery copy while SQLite applies it. Notes store bounded Markdown text; the CLI opens the user's configured editor using a private temporary file and persists content only after the editor exits successfully. The Links feature resolves item endpoints through each owner's typed service and removes incoming/outgoing relations and owned references after item-removal events. The executable reads a versioned TOML configuration for host-shell presets; plugin-specific settings and filesystem attachments remain future work. Cross-plugin access uses services rather than unmediated SQL. No network/cloud account is required for core workflows.
+SQLite is the current local transactional store for Tasks, Projects, Notes, Ideas, and Links and the intended basis for other plugin-owned schemas, migration ownership, safe backups, and stable cross-feature identities/relations. The storage adapter creates standalone SQLite backups without overwriting existing files and validates database integrity and format metadata before restoring; restore requires explicit CLI confirmation and keeps a recovery copy while SQLite applies it. Notes store bounded Markdown text; the CLI opens the user's configured editor using a private temporary file and persists content only after the editor exits successfully. The Links feature resolves item endpoints through each owner's typed service and removes incoming/outgoing relations and owned references after item-removal events. The executable reads a versioned TOML configuration for shell presets and the opt-in assistant; settings for other plugins and filesystem attachments remain future work. Cross-plugin access uses services rather than unmediated SQL. Core workflows require no network or cloud account.
 
-### Optional agents and external plugins
+### Optional assistant and external plugins
 
-An AI assistant is an optional plugin/adapter, not a kernel dependency. It can discover approved commands, propose calls, and obtain confirmation for meaningful writes; it never bypasses the host command path. Agent output is untrusted input.
+The built-in assistant is disabled by default and is not a kernel dependency. When enabled, it sends prompts and at most 20 open-task summaries to a local HTTP loopback endpoint using the Ollama chat protocol. The adapter disables proxies and redirects, runs streaming requests on a cancellable worker thread, and treats provider output as untrusted input. It exposes only task listing, creation, and completion; all task changes route through the host dispatcher and display a preview for explicit approval. Task deletion is unavailable. Conversation history is held only in memory. Workflows outside the assistant remain available without a running model service.
 
 External plugin runtime candidates (such as Wasm Component Model/WIT) are deferred until first-party services prove the contracts. Runtime choice requires resource, isolation, cancellation, permission and authoring tests. Do not claim that native Rust ABI plugins offer isolation.
 

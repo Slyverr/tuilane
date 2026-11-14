@@ -7,6 +7,7 @@ use std::{
 
 use directories::ProjectDirs;
 use serde::Deserialize;
+use tuilane_assistant::{AssistantConfig, AssistantConfigError, DEFAULT_ENDPOINT};
 use tuilane_ui::{KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
 
 const CONFIG_ENV: &str = "TUILANE_CONFIG";
@@ -30,6 +31,10 @@ pub enum ConfigError {
     UnsupportedValue {
         key: &'static str,
         value: String,
+        path: PathBuf,
+    },
+    MissingValue {
+        key: &'static str,
         path: PathBuf,
     },
 }
@@ -64,6 +69,13 @@ impl fmt::Display for ConfigError {
                 "invalid configuration {}: unsupported value '{value}' for {key}",
                 path.display()
             ),
+            Self::MissingValue { key, path } => {
+                write!(
+                    formatter,
+                    "invalid configuration {}: missing {key}",
+                    path.display()
+                )
+            }
         }
     }
 }
@@ -75,7 +87,8 @@ impl Error for ConfigError {
             Self::Parse { source, .. } => Some(source),
             Self::ConfigDirectoryUnavailable
             | Self::UnsupportedVersion { .. }
-            | Self::UnsupportedValue { .. } => None,
+            | Self::UnsupportedValue { .. }
+            | Self::MissingValue { .. } => None,
         }
     }
 }
@@ -85,6 +98,7 @@ impl Error for ConfigError {
 struct FileConfig {
     version: u32,
     ui: UiConfig,
+    assistant: AssistantFileConfig,
 }
 
 impl Default for FileConfig {
@@ -92,8 +106,32 @@ impl Default for FileConfig {
         Self {
             version: CONFIG_VERSION,
             ui: UiConfig::default(),
+            assistant: AssistantFileConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct AssistantFileConfig {
+    enabled: bool,
+    model: String,
+    endpoint: String,
+}
+
+impl Default for AssistantFileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: String::new(),
+            endpoint: DEFAULT_ENDPOINT.to_owned(),
+        }
+    }
+}
+
+pub(super) struct ApplicationConfig {
+    pub(super) workspace: WorkspaceConfig,
+    pub(super) assistant: Option<AssistantConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -157,14 +195,63 @@ impl FileConfig {
         };
         Ok(WorkspaceConfig::new(theme, layout, keymap))
     }
+
+    fn application(&self, path: &Path) -> Result<ApplicationConfig, ConfigError> {
+        let workspace = self.workspace(path)?;
+        AssistantConfig::validate_endpoint(&self.assistant.endpoint).map_err(|error| {
+            assistant_config_error(error, "assistant.endpoint", &self.assistant.endpoint, path)
+        })?;
+        let assistant = if self.assistant.enabled {
+            if self.assistant.model.trim().is_empty() {
+                return Err(ConfigError::MissingValue {
+                    key: "assistant.model",
+                    path: path.to_owned(),
+                });
+            }
+            Some(
+                AssistantConfig::new(&self.assistant.model, &self.assistant.endpoint).map_err(
+                    |error| {
+                        assistant_config_error(
+                            error,
+                            "assistant.model",
+                            &self.assistant.model,
+                            path,
+                        )
+                    },
+                )?,
+            )
+        } else {
+            None
+        };
+        Ok(ApplicationConfig {
+            workspace,
+            assistant,
+        })
+    }
 }
 
-pub fn load_workspace_config() -> Result<WorkspaceConfig, ConfigError> {
+fn assistant_config_error(
+    error: AssistantConfigError,
+    key: &'static str,
+    value: &str,
+    path: &Path,
+) -> ConfigError {
+    ConfigError::UnsupportedValue {
+        key,
+        value: format!("{value} ({error})"),
+        path: path.to_owned(),
+    }
+}
+
+pub(super) fn load_application_config() -> Result<ApplicationConfig, ConfigError> {
     let (path, explicit) = resolve_config_path(None)?;
     match fs::read_to_string(&path) {
-        Ok(contents) => parse_config(&contents, &path),
+        Ok(contents) => parse_application_config(&contents, &path),
         Err(error) if error.kind() == io::ErrorKind::NotFound && !explicit => {
-            Ok(WorkspaceConfig::default())
+            Ok(ApplicationConfig {
+                workspace: WorkspaceConfig::default(),
+                assistant: None,
+            })
         }
         Err(source) => Err(ConfigError::Read { path, source }),
     }
@@ -198,11 +285,16 @@ fn resolve_config_path(explicit_path: Option<PathBuf>) -> Result<(PathBuf, bool)
 }
 
 fn parse_config(contents: &str, path: &Path) -> Result<WorkspaceConfig, ConfigError> {
+    let application = parse_application_config(contents, path)?;
+    Ok(application.workspace)
+}
+
+fn parse_application_config(contents: &str, path: &Path) -> Result<ApplicationConfig, ConfigError> {
     let parsed = toml::from_str::<FileConfig>(contents).map_err(|source| ConfigError::Parse {
         path: path.to_owned(),
         source,
     })?;
-    parsed.workspace(path)
+    parsed.application(path)
 }
 
 #[cfg(test)]
@@ -230,6 +322,43 @@ mod tests {
                 KeymapPreset::Vim
             )
         );
+    }
+
+    #[test]
+    fn assistant_is_disabled_by_default_and_enabled_only_with_a_model() {
+        let defaults = parse_application_config("", Path::new("tuilane.toml")).unwrap();
+        assert!(defaults.assistant.is_none());
+
+        let enabled = parse_application_config(
+            "[assistant]\nenabled = true\nmodel = 'qwen3:8b'\n",
+            Path::new("tuilane.toml"),
+        )
+        .unwrap();
+        assert_eq!(
+            enabled.assistant.as_ref().map(AssistantConfig::model),
+            Some("qwen3:8b")
+        );
+    }
+
+    #[test]
+    fn enabled_assistant_requires_a_model_and_loopback_endpoint() {
+        assert!(matches!(
+            parse_application_config("[assistant]\nenabled = true\n", Path::new("tuilane.toml")),
+            Err(ConfigError::MissingValue {
+                key: "assistant.model",
+                ..
+            })
+        ));
+        assert!(matches!(
+            parse_application_config(
+                "[assistant]\nenabled = true\nmodel = 'qwen3'\nendpoint = 'https://example.com'\n",
+                Path::new("tuilane.toml")
+            ),
+            Err(ConfigError::UnsupportedValue {
+                key: "assistant.endpoint",
+                ..
+            })
+        ));
     }
 
     #[test]
