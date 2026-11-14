@@ -1,0 +1,33 @@
+package tuilane:runtime-evaluation;
+
+interface host {
+    enum host-error {
+        denied,
+        unknown-operation,
+        invalid-request,
+        failed,
+    }
+
+    dispatch: func(operation: string, payload: list<u8>) -> result<list<u8>, host-error>;
+}
+
+interface plugin {
+    use host.{host-error};
+
+    record plugin-metadata {
+        id: string,
+        version: string,
+    }
+
+    metadata: func() -> plugin-metadata;
+    call: func(operation: string, payload: list<u8>) -> result<list<u8>, host-error>;
+    reserve-memory: func(bytes: u32) -> bool;
+    memory-size: func() -> u64;
+    spin: func();
+    trap: func();
+}
+
+world evaluation {
+    import host;
+    export plugin;
+}

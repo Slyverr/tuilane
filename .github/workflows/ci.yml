@@ -72,3 +72,15 @@ jobs:
         run: |
           cargo build -p tuilane --locked
           python3 scripts/check-terminal-lifecycle.py target/debug/tuilane
+
+  runtime-evaluation:
+    name: External runtime evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: cachix/install-nix-action@v31
+      - name: Validate the Wasm runtime experiment
+        run: nix develop .#runtime-evaluation -c scripts/check-runtime-evaluation.sh

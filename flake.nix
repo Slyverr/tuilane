@@ -46,6 +46,7 @@
         in
         {
           default = pkgs.callPackage ./nix/dev-shell.nix { };
+          runtime-evaluation = pkgs.callPackage ./nix/runtime-evaluation-shell.nix { };
         }
       );
 

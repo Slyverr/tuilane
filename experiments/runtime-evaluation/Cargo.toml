@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["guest", "host"]
+default-members = ["host"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+tuilane-core = { path = "../../crates/tuilane-core" }
+tuilane-plugin-api = { path = "../../crates/tuilane-plugin-api" }
+wasmtime = { version = "49.0.0", default-features = false, features = ["anyhow", "component-model", "cranelift", "runtime", "std"] }
+wit-bindgen = "0.63.0"
