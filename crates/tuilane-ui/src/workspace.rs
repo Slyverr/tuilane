@@ -377,12 +377,20 @@ impl Workspace {
     }
 
     fn render_navigation(&self, frame: &mut Frame<'_>, area: Rect) {
-        let visible_count =
-            (area.height.saturating_sub(2) / NAVIGATION_ENTRY_HEIGHT).max(1) as usize;
+        let block = Self::panel_block(
+            "Views  [ ] width",
+            self.focus == FocusArea::Navigation,
+            self.config.theme(),
+        );
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        let visible_count = (inner.height / NAVIGATION_ENTRY_HEIGHT) as usize;
+        if visible_count == 0 {
+            return;
+        }
         let selected = self.selected.unwrap_or(0);
         let first = selected.saturating_sub(visible_count.saturating_sub(1));
-        let mut items = Vec::with_capacity(visible_count * 3);
-        let item_width = area.width.saturating_sub(2) as usize;
         for (index, view) in self
             .views
             .iter()
@@ -394,16 +402,19 @@ impl Workspace {
             let item_style = self.config.theme().navigation_item_style(is_selected);
             let marker = if is_selected { "› " } else { "  " };
             let icon = view.value().navigation_icon();
-            let title = truncate_navigation_text(
-                view.descriptor().title(),
-                item_width.saturating_sub(4 + icon.chars().count()),
-            );
-            let text_width =
-                marker.chars().count() + icon.chars().count() + 1 + title.chars().count();
-            let padding_width = item_width.saturating_sub(text_width);
+            let title_width = usize::from(inner.width).saturating_sub(4 + icon.chars().count());
+            let item_y = inner.y + (index - first) as u16 * NAVIGATION_ENTRY_HEIGHT;
+            let item_area = Rect {
+                x: inner.x,
+                y: item_y,
+                width: inner.width,
+                height: NAVIGATION_ENTRY_HEIGHT,
+            };
+            frame.render_widget(Block::default().style(item_style), item_area);
 
-            items.push(Line::from(Span::styled(" ".repeat(item_width), item_style)));
-            items.push(Line::from(vec![
+            let title = truncate_navigation_text(view.descriptor().title(), title_width);
+
+            let label = Line::from(vec![
                 Span::styled(marker, item_style),
                 Span::styled(
                     icon,
@@ -415,16 +426,16 @@ impl Workspace {
                 ),
                 Span::styled(" ", item_style),
                 Span::styled(title, item_style),
-                Span::styled(" ".repeat(padding_width), item_style),
-            ]));
-            items.push(Line::from(Span::styled(" ".repeat(item_width), item_style)));
+            ]);
+            frame.render_widget(
+                Paragraph::new(label).style(item_style),
+                Rect {
+                    y: item_y + 1,
+                    height: 1,
+                    ..item_area
+                },
+            );
         }
-        let block = Self::panel_block(
-            "Views  [ ] width",
-            self.focus == FocusArea::Navigation,
-            self.config.theme(),
-        );
-        frame.render_widget(Paragraph::new(items).block(block), area);
     }
 
     fn render_content(&mut self, frame: &mut Frame<'_>, area: Rect) {

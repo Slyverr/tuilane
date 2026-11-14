@@ -212,34 +212,66 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
 }
 
 #[test]
-fn workspace_navigation_shows_view_icons_and_colored_key_hints() {
+fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
     let mut workspace = workspace_with_two_views();
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    let buffer = terminal.backend().buffer();
-    let cells = buffer.content();
-    let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
-    assert!(text.contains("Views  [ ] width"));
-    assert!(text.contains("◇ Overview"));
-    assert!(text.contains("j/k Views"));
-    assert!(!text.contains("test view contribution"));
-    assert!(!text.contains("◆ tuilane"));
-    assert!(!text.contains("[focus]"));
+    {
+        let buffer = terminal.backend().buffer();
+        let cells = buffer.content();
+        let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(text.contains("Views  [ ] width"));
+        assert!(text.contains("◇ Overview"));
+        assert!(text.contains("j/k Views"));
+        assert!(!text.contains("test view contribution"));
+        assert!(!text.contains("◆ tuilane"));
+        assert!(!text.contains("[focus]"));
 
-    for row in 1..=3 {
-        assert_eq!(buffer[(1, row)].bg, Color::Cyan);
-        assert_eq!(buffer[(30, row)].bg, Color::Cyan);
+        for y in 1..=3 {
+            for x in 1..=30 {
+                assert_eq!(
+                    buffer[(x, y)].bg,
+                    Color::Cyan,
+                    "selected block at ({x}, {y})"
+                );
+            }
+        }
+        assert_eq!(buffer[(1, 1)].symbol(), " ");
+        assert_eq!(buffer[(1, 3)].symbol(), " ");
+
+        let icon = cells
+            .iter()
+            .find(|cell| cell.symbol() == "◇")
+            .expect("navigation icon is rendered");
+        assert_eq!(icon.fg, Color::Black);
+        assert_eq!(icon.bg, Color::Cyan);
     }
-    assert_eq!(buffer[(1, 1)].symbol(), " ");
-    assert_eq!(buffer[(1, 3)].symbol(), " ");
 
-    let icon = cells
-        .iter()
-        .find(|cell| cell.symbol() == "◇")
-        .expect("navigation icon is rendered");
-    assert_eq!(icon.fg, Color::Black);
-    assert_eq!(icon.bg, Color::Cyan);
+    workspace.handle_key(key(KeyCode::Char('j')));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    for y in 4..=6 {
+        for x in 1..=30 {
+            assert_eq!(
+                buffer[(x, y)].bg,
+                Color::Cyan,
+                "selected block at ({x}, {y})"
+            );
+        }
+    }
+    for y in 1..=3 {
+        for x in 1..=30 {
+            assert_ne!(
+                buffer[(x, y)].bg,
+                Color::Cyan,
+                "unselected block at ({x}, {y})"
+            );
+        }
+    }
+    assert_eq!(buffer[(1, 4)].symbol(), " ");
+    assert_eq!(buffer[(1, 6)].symbol(), " ");
 }
 
 #[test]
