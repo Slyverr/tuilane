@@ -34,7 +34,7 @@ def wait_for_workspace(master: int, process: subprocess.Popen[bytes], timeout: f
                 continue
             raise
 
-        if b"tuilane" in output:
+        if b"Views" in output:
             return
 
     raise TimeoutError("tuilane did not render its workspace in time")
