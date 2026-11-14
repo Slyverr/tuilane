@@ -94,7 +94,7 @@ measured limits and recovery requirements in the [evaluation report](experiments
 The CH-09 decision itself did not integrate external plugins or establish a
 stable plugin API; those are CH-10 work.
 
-### CH-10 · candidate v0.10.0 — External plugin SDK beta
+### CH-10 · v0.10.0 — External plugin SDK beta
 
 **Depends:** CH-09 passes. Implement versioned manifests, host services/UI contributions, install/enable/disable, grants/revocation, compatibility errors, and an independently authored sample extension. **Verify:** no host recompilation, permission denial, uninstall safety and recovery. **Exclude:** automatic marketplace.
 

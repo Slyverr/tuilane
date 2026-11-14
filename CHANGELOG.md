@@ -4,6 +4,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-14
+
 ### Added
 
 - Add a beta WebAssembly plugin SDK with versioned manifests, host-mediated services, declared commands and views, explicit grants, lifecycle management, and an independently built sample.
