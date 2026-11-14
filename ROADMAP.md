@@ -81,7 +81,7 @@ All targets are **proposed** until implementation evidence and the actual versio
 
 **Depends:** CH-06 and CH-01 drawer/overlay. Add an opt-in local Ollama-compatible provider, scoped task context, streaming/cancellation, and host-mediated approved task tools. **Verify:** denial of unauthorized/destructive actions, visible approval previews, disabled-by-default use, and working offline without a model service. **Exclude:** remote providers, mandatory subscriptions, task deletion, or unrestricted unattended execution.
 
-### CH-08 · candidate v0.8.0 — Alpha hardening
+### CH-08 · v0.8.0 — Alpha hardening
 
 **Depends:** the usable flows from earlier chapters; the assistant may remain experimental. Improve install, diagnosis, backup/restore, terminal fallback, import/migration where real fixtures exist, accessibility/focus and error recovery. **Verify:** clean Linux install, roundtrip data, damaged-input handling, terminal cleanup. **Exclude:** stable external plugin ABI.
 
