@@ -13,7 +13,7 @@ cargo run -p tuilane
 cargo test --workspace
 ```
 
-For setup, see [configuration](docs/configuration.md). The [roadmap](ROADMAP.md) covers planned work, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how to contribute.
+For installation and Nix builds, see [installation](docs/installation.md). The [configuration guide](docs/configuration.md) covers local settings, the [roadmap](ROADMAP.md) describes planned work, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how to contribute.
 
 ## License
 

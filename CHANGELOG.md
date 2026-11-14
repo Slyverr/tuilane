@@ -4,6 +4,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+- Add a pinned Nix flake for Linux builds, profile installation, and development.
+
 ## [0.7.0] - 2026-11-14
 
 - Add an opt-in local assistant with streaming responses and reviewed task creation or completion.

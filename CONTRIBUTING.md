@@ -11,7 +11,9 @@ tuilane is personal-first but intended to be maintainable and approachable as an
 
 ## Local development
 
-Use the Rust toolchain selected by `rust-toolchain.toml` with `rustfmt`, `clippy`, and a native linker. From the workspace root:
+Use the Rust toolchain selected by `rust-toolchain.toml` with `rustfmt`, `clippy`,
+and a native linker. Alternatively, `nix develop` provides the project's pinned
+Rust tools and Nix formatter. From the workspace root:
 
 ```sh
 cargo fmt --all -- --check
