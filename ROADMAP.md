@@ -17,7 +17,7 @@ Completion is proven by implementation, user-visible behavior, and passing accep
 
 ## Current state and naming
 
-The current baseline is a thirteen-member Cargo workspace with a composable terminal shell and first-party Tasks, Calendar, Projects, Notes, Ideas, Links, Search, and optional Assistant features in early development. Calendar queries due tasks through the host broker and refreshes after task changes. Projects support durable CRUD through the CLI and TUI. Notes support durable Markdown CRUD, external-editor workflows, stable item lookup, and a TUI view. Ideas support durable capture, lookup, rename, and removal through the CLI and TUI. Links support validated directed relations, backlinks, file/URL references, terminal navigation, and event-driven cleanup after item deletion. The assistant is disabled by default and uses a configured local model endpoint when enabled. CH-09's measured evaluation recommends Wasmtime/WIT for the CH-10 SDK prototype only; no runtime is integrated into the product. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
+The current baseline is a fourteen-member Cargo workspace with a composable terminal shell and first-party Tasks, Calendar, Projects, Notes, Ideas, Links, Search, and optional Assistant features in early development. Calendar queries due tasks through the host broker and refreshes after task changes. Projects support durable CRUD through the CLI and TUI. Notes support durable Markdown CRUD, external-editor workflows, stable item lookup, and a TUI view. Ideas support durable capture, lookup, rename, and removal through the CLI and TUI. Links support validated directed relations, backlinks, file/URL references, terminal navigation, and event-driven cleanup after item deletion. The assistant is disabled by default and uses a configured local model endpoint when enabled. The beta external plugin runtime loads independently built, versioned Wasm bundles with host-mediated information and search services, declared commands and text views, explicit grants, and install/disable/uninstall operations. This contract is experimental; it has no general sandbox-security claim, plugin storage API, or marketplace. Inspect source, tests, CI, and tags before assessing milestone completion. CH-00 establishes the foundation; CH-01 is the first release target, `v0.1.0`. Never move/reuse an existing tag; adjust future version targets if necessary.
 
 Legacy prototype behavior or data should only be ported through tracked, validated tasks after the relevant source/fixtures are available in the repository. Do not depend on private or untracked source locations.
 
@@ -89,10 +89,10 @@ Future targets are **proposed** until implementation evidence and the actual ver
 
 **Depends:** functional host contracts and permission tests. Prototype an isolated Wasm/WIT guest and benchmark startup, memory, call overhead, denial behavior, cancellation, failure recovery and authoring complexity; compare lightweight scripting only if justified. **Gate:** document a measured go/no-go. If inadequate, revise the next milestone instead of claiming plugin safety.
 
-**Gate result:** Go to the CH-10 SDK prototype using Wasmtime/WIT, with the
+**Gate result:** Proceed to the CH-10 SDK prototype using Wasmtime/WIT, with the
 measured limits and recovery requirements in the [evaluation report](experiments/runtime-evaluation/README.md).
-This does not integrate external plugins into the product or establish a
-stable plugin API.
+The CH-09 decision itself did not integrate external plugins or establish a
+stable plugin API; those are CH-10 work.
 
 ### CH-10 · candidate v0.10.0 — External plugin SDK beta
 
