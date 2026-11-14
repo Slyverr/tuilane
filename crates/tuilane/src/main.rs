@@ -1112,10 +1112,6 @@ impl View for OverviewView {
         &self.descriptor
     }
 
-    fn navigation_icon(&self) -> &'static str {
-        "⌂"
-    }
-
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         if area.width < 56 || area.height < 14 {
             let lines = Text::from(vec![
@@ -1128,7 +1124,7 @@ impl View for OverviewView {
                 Line::from("⌘ Commands · ▤ Storage"),
                 Line::from("⇄ Services · ◷ Events"),
                 Line::from("▣ Views · ◇ Permissions"),
-                Line::from("j/k views · Tab then [ ] resize"),
+                Line::from("j/k move · l/← open · c collapse · [ ] resize"),
                 Line::from("? for help"),
             ]);
             frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);

@@ -129,6 +129,29 @@ fn registered_views_navigate_and_can_be_removed() {
 }
 
 #[test]
+fn l_left_and_enter_open_the_selected_navigation_entry() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    workspace.handle_key(key(KeyCode::Tab));
+    assert_eq!(workspace.focus(), FocusArea::Navigation);
+
+    workspace.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    workspace.handle_key(key(KeyCode::Char('l')));
+    assert_eq!(workspace.focus(), FocusArea::Content);
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+
+    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_key(key(KeyCode::Left));
+    assert_eq!(workspace.focus(), FocusArea::Content);
+
+    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_key(key(KeyCode::Enter));
+    assert_eq!(workspace.focus(), FocusArea::Content);
+}
+
+#[test]
 fn default_keymap_moves_between_views_with_j_and_k() {
     let mut workspace = workspace_with_two_views();
 
@@ -200,15 +223,15 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
     themed_terminal
         .draw(|frame| themed_workspace.render(frame))
         .unwrap();
-    let selected_icon = themed_terminal
+    let selected_pixel = themed_terminal
         .backend()
         .buffer()
         .content()
         .iter()
-        .find(|cell| cell.symbol() == "◇")
-        .expect("selected view icon is rendered");
-    assert_eq!(selected_icon.fg, Color::Black);
-    assert_eq!(selected_icon.bg, Color::Yellow);
+        .find(|cell| cell.symbol() == "█")
+        .expect("selected view pixel icon is rendered");
+    assert_eq!(selected_pixel.fg, Color::Black);
+    assert_eq!(selected_pixel.bg, Color::Yellow);
 }
 
 #[test]
@@ -222,7 +245,7 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
         let cells = buffer.content();
         let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
         assert!(text.contains("Views  [ ] width"));
-        assert!(text.contains("◇ Overview"));
+        assert!(text.contains("Overview"));
         assert!(text.contains("j/k Views"));
         assert!(!text.contains("test view contribution"));
         assert!(!text.contains("◆ tuilane"));
@@ -240,12 +263,12 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
         assert_eq!(buffer[(1, 1)].symbol(), " ");
         assert_eq!(buffer[(1, 3)].symbol(), " ");
 
-        let icon = cells
+        let icon_pixel = cells
             .iter()
-            .find(|cell| cell.symbol() == "◇")
-            .expect("navigation icon is rendered");
-        assert_eq!(icon.fg, Color::Black);
-        assert_eq!(icon.bg, Color::Cyan);
+            .find(|cell| cell.symbol() == "█")
+            .expect("navigation pixel icon is rendered");
+        assert_eq!(icon_pixel.fg, Color::Black);
+        assert_eq!(icon_pixel.bg, Color::Cyan);
     }
 
     workspace.handle_key(key(KeyCode::Char('j')));
@@ -272,6 +295,29 @@ fn workspace_navigation_renders_three_row_items_with_full_block_highlight() {
     }
     assert_eq!(buffer[(1, 4)].symbol(), " ");
     assert_eq!(buffer[(1, 6)].symbol(), " ");
+}
+
+#[test]
+fn collapsed_navigation_shows_centered_pixel_icons_without_view_labels() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_key(key(KeyCode::Char('c')));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let sidebar = (0..19)
+        .flat_map(|y| (0..9).map(move |x| buffer[(x, y)].symbol()))
+        .collect::<String>();
+    assert!(sidebar.contains("Views"));
+    assert!(!sidebar.contains("Overview"));
+    assert!(sidebar.contains("█"));
+    for y in 1..=3 {
+        for x in 1..=7 {
+            assert_eq!(buffer[(x, y)].bg, Color::Cyan);
+        }
+    }
 }
 
 #[test]
@@ -341,7 +387,7 @@ fn sidebar_can_shrink_without_hiding_its_resize_hint() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(text.contains("Resize"));
+    assert!(text.contains("Width"));
     assert_eq!(buffer[(27, 0)].symbol(), "╮");
 }
 

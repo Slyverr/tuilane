@@ -4,6 +4,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
+    style::Color,
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
@@ -16,6 +17,7 @@ const DEFAULT_NAVIGATION_WIDTH: u16 = 32;
 const MIN_NAVIGATION_WIDTH: u16 = 20;
 const MAX_NAVIGATION_WIDTH: u16 = 44;
 const NAVIGATION_WIDTH_STEP: u16 = 4;
+const COLLAPSED_NAVIGATION_WIDTH: u16 = 9;
 const NAVIGATION_ENTRY_HEIGHT: u16 = 3;
 
 /// The shell region currently receiving keyboard navigation.
@@ -59,6 +61,7 @@ pub struct Workspace {
     palette_selected: usize,
     should_quit: bool,
     navigation_width: u16,
+    navigation_collapsed: bool,
     config: WorkspaceConfig,
     last_layout: ShellLayout,
 }
@@ -102,6 +105,7 @@ impl Default for Workspace {
             palette_selected: 0,
             should_quit: false,
             navigation_width: DEFAULT_NAVIGATION_WIDTH,
+            navigation_collapsed: false,
             config: WorkspaceConfig::default(),
             last_layout: ShellLayout::default(),
         }
@@ -247,7 +251,18 @@ impl Workspace {
 
         if self.focus == FocusArea::Navigation {
             match key.code {
+                KeyCode::Char('c') => {
+                    self.navigation_collapsed = !self.navigation_collapsed;
+                    return;
+                }
+                KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => {
+                    self.focus = FocusArea::Content;
+                    return;
+                }
                 KeyCode::Char('[') => {
+                    if self.navigation_collapsed {
+                        return;
+                    }
                     self.navigation_width = self
                         .navigation_width
                         .saturating_sub(NAVIGATION_WIDTH_STEP)
@@ -255,6 +270,9 @@ impl Workspace {
                     return;
                 }
                 KeyCode::Char(']') => {
+                    if self.navigation_collapsed {
+                        return;
+                    }
                     self.navigation_width = self
                         .navigation_width
                         .saturating_add(NAVIGATION_WIDTH_STEP)
@@ -300,6 +318,7 @@ impl Workspace {
             self.drawer_open,
             self.config.layout(),
             self.navigation_width,
+            self.navigation_collapsed,
         );
         self.last_layout = layout.state;
         self.normalize_focus(layout.state);
@@ -315,14 +334,31 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
 
-        let status = if area.width < 72 && self.focus == FocusArea::Navigation {
+        let status = if self.focus == FocusArea::Navigation && self.navigation_collapsed {
             Line::from(vec![
                 Span::styled("j/k", self.config.theme().header_style()),
-                Span::styled(" Views  ", self.config.theme().muted_style()),
-                Span::styled("[/]", self.config.theme().header_style()),
-                Span::styled(" Resize  ", self.config.theme().muted_style()),
+                Span::styled(" Move  ", self.config.theme().muted_style()),
+                Span::styled("l/←", self.config.theme().header_style()),
+                Span::styled(" Open  ", self.config.theme().muted_style()),
+                Span::styled("c", self.config.theme().header_style()),
+                Span::styled(" Expand  ", self.config.theme().muted_style()),
                 Span::styled("?", self.config.theme().header_style()),
-                Span::styled(" Help  ", self.config.theme().muted_style()),
+                Span::styled(" Help ", self.config.theme().muted_style()),
+                Span::styled("q", self.config.theme().header_style()),
+                Span::styled(" Quit", self.config.theme().muted_style()),
+            ])
+        } else if area.width < 72 && self.focus == FocusArea::Navigation {
+            Line::from(vec![
+                Span::styled("j/k", self.config.theme().header_style()),
+                Span::styled(" Move  ", self.config.theme().muted_style()),
+                Span::styled("l/←", self.config.theme().header_style()),
+                Span::styled(" Open  ", self.config.theme().muted_style()),
+                Span::styled("c", self.config.theme().header_style()),
+                Span::styled(" Fold  ", self.config.theme().muted_style()),
+                Span::styled("[/]", self.config.theme().header_style()),
+                Span::styled(" Width  ", self.config.theme().muted_style()),
+                Span::styled("?", self.config.theme().header_style()),
+                Span::styled(" Help ", self.config.theme().muted_style()),
                 Span::styled("q", self.config.theme().header_style()),
                 Span::styled(" Quit", self.config.theme().muted_style()),
             ])
@@ -340,7 +376,11 @@ impl Workspace {
         } else if self.focus == FocusArea::Navigation {
             Line::from(vec![
                 Span::styled("j/k", self.config.theme().header_style()),
-                Span::styled(" Views   ", self.config.theme().muted_style()),
+                Span::styled(" Move   ", self.config.theme().muted_style()),
+                Span::styled("l/←", self.config.theme().header_style()),
+                Span::styled(" Open   ", self.config.theme().muted_style()),
+                Span::styled("c", self.config.theme().header_style()),
+                Span::styled(" Collapse   ", self.config.theme().muted_style()),
                 Span::styled("[/]", self.config.theme().header_style()),
                 Span::styled(" Resize   ", self.config.theme().muted_style()),
                 Span::styled("Tab", self.config.theme().header_style()),
@@ -377,8 +417,13 @@ impl Workspace {
     }
 
     fn render_navigation(&self, frame: &mut Frame<'_>, area: Rect) {
+        let title = if self.navigation_collapsed {
+            "Views"
+        } else {
+            "Views  [ ] width"
+        };
         let block = Self::panel_block(
-            "Views  [ ] width",
+            title,
             self.focus == FocusArea::Navigation,
             self.config.theme(),
         );
@@ -401,8 +446,8 @@ impl Workspace {
             let is_selected = Some(index) == self.selected;
             let item_style = self.config.theme().navigation_item_style(is_selected);
             let marker = if is_selected { "› " } else { "  " };
-            let icon = view.value().navigation_icon();
-            let title_width = usize::from(inner.width).saturating_sub(4 + icon.chars().count());
+            let (icon_pattern, icon_color) = navigation_icon(view.descriptor().id().as_str());
+            let title_width = usize::from(inner.width).saturating_sub(6);
             let item_y = inner.y + (index - first) as u16 * NAVIGATION_ENTRY_HEIGHT;
             let item_area = Rect {
                 x: inner.x,
@@ -411,29 +456,53 @@ impl Workspace {
                 height: NAVIGATION_ENTRY_HEIGHT,
             };
             frame.render_widget(Block::default().style(item_style), item_area);
-
-            let title = truncate_navigation_text(view.descriptor().title(), title_width);
-
-            let label = Line::from(vec![
-                Span::styled(marker, item_style),
-                Span::styled(
-                    icon,
-                    if is_selected {
-                        item_style
+            let title = if self.navigation_collapsed {
+                String::new()
+            } else {
+                truncate_navigation_text(view.descriptor().title(), title_width)
+            };
+            let icon_x_offset = if self.navigation_collapsed {
+                inner.width.saturating_sub(3) / 2
+            } else {
+                2
+            };
+            let mut lines = Vec::with_capacity(3);
+            for (row, icon_row) in icon_pattern.iter().enumerate() {
+                let mut spans = Vec::with_capacity(5);
+                if !self.navigation_collapsed {
+                    spans.push(Span::styled(
+                        if row == 1 { marker } else { "  " },
+                        item_style,
+                    ));
+                } else if icon_x_offset > 0 {
+                    spans.push(Span::styled(" ".repeat(icon_x_offset as usize), item_style));
+                }
+                for column in 0..3 {
+                    let pixel = if icon_row & (1 << (2 - column)) != 0 {
+                        let icon_style = if is_selected {
+                            item_style.fg(Color::Black)
+                        } else {
+                            item_style.fg(icon_color)
+                        };
+                        Span::styled("█", icon_style)
                     } else {
-                        self.config.theme().accent_style()
-                    },
-                ),
-                Span::styled(" ", item_style),
-                Span::styled(title, item_style),
-            ]);
+                        Span::styled(" ", item_style)
+                    };
+                    spans.push(pixel);
+                }
+                if !self.navigation_collapsed {
+                    if row == 1 {
+                        spans.push(Span::styled(" ", item_style));
+                        spans.push(Span::styled(title.clone(), item_style));
+                    } else {
+                        spans.push(Span::styled(" ".repeat(title_width + 1), item_style));
+                    }
+                }
+                lines.push(Line::from(spans));
+            }
             frame.render_widget(
-                Paragraph::new(label).style(item_style),
-                Rect {
-                    y: item_y + 1,
-                    height: 1,
-                    ..item_area
-                },
+                Paragraph::new(Text::from(lines)).style(item_style),
+                item_area,
             );
         }
     }
@@ -521,7 +590,8 @@ impl Workspace {
         let text = Text::from(vec![
             Line::from("j  Next view     k  Previous view (stops at the ends)"),
             Line::from("↑/↓  Move a list; switch views when Views is focused"),
-            Line::from("Tab  Focus panels     [ / ]  Resize Views"),
+            Line::from("l / ← / Enter  Open the selected view"),
+            Line::from("Tab  Focus panels     [ / ]  Resize Views     c  Collapse / expand"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
             Line::from("Ctrl-P  Commands     ?  Close help     q  Quit"),
         ]);
@@ -742,6 +812,7 @@ impl Workspace {
         drawer_open: bool,
         preset: LayoutPreset,
         navigation_width: u16,
+        navigation_collapsed: bool,
     ) -> ShellRects {
         let [body, status] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
@@ -756,8 +827,12 @@ impl Workspace {
         };
 
         let show_inspector = inspector_open && area.width >= 52;
+        let navigation_width = if navigation_collapsed {
+            COLLAPSED_NAVIGATION_WIDTH
+        } else {
+            navigation_width.max(MIN_NAVIGATION_WIDTH)
+        };
         let navigation_requirement = navigation_width
-            .max(MIN_NAVIGATION_WIDTH)
             .saturating_add(20)
             .saturating_add(if show_inspector { 28 } else { 0 });
         let show_navigation = preset != LayoutPreset::Focus && area.width >= navigation_requirement;
@@ -849,6 +924,44 @@ impl Workspace {
     }
 }
 
+fn navigation_icon(id: &str) -> ([u8; 3], Color) {
+    let (pattern, color) = match id {
+        "overview" => ([0b010, 0b111, 0b101], Color::LightCyan),
+        "tasks" => ([0b001, 0b010, 0b110], Color::LightGreen),
+        "projects" => ([0b101, 0b111, 0b101], Color::LightBlue),
+        "notes" => ([0b111, 0b100, 0b111], Color::LightMagenta),
+        "ideas" => ([0b010, 0b101, 0b010], Color::LightYellow),
+        "calendar" => ([0b111, 0b101, 0b111], Color::Cyan),
+        "links" => ([0b101, 0b010, 0b101], Color::LightBlue),
+        "search" => ([0b110, 0b101, 0b110], Color::LightCyan),
+        "assistant" => ([0b010, 0b111, 0b010], Color::LightMagenta),
+        _ => {
+            let hash = id.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
+                (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+            });
+            let mut bits = (hash as u16) & 0x01ff;
+            if bits.count_ones() < 3 || bits.count_ones() > 7 {
+                bits ^= 0b001_010_100;
+            }
+            let pattern = [
+                ((bits >> 6) & 0b111) as u8,
+                ((bits >> 3) & 0b111) as u8,
+                (bits & 0b111) as u8,
+            ];
+            let color = match (hash >> 24) % 6 {
+                0 => Color::LightCyan,
+                1 => Color::LightGreen,
+                2 => Color::LightBlue,
+                3 => Color::LightMagenta,
+                4 => Color::LightYellow,
+                _ => Color::Cyan,
+            };
+            (pattern, color)
+        }
+    };
+    (pattern, color)
+}
+
 fn truncate_navigation_text(value: &str, max_width: usize) -> String {
     let character_count = value.chars().count();
     if character_count <= max_width {
@@ -936,6 +1049,7 @@ mod tests {
             true,
             LayoutPreset::Balanced,
             DEFAULT_NAVIGATION_WIDTH,
+            false,
         );
         assert!(!layout.state.navigation);
         assert!(!layout.state.inspector);
@@ -950,6 +1064,7 @@ mod tests {
             true,
             LayoutPreset::Balanced,
             DEFAULT_NAVIGATION_WIDTH,
+            false,
         );
         assert!(layout.state.navigation);
         assert!(layout.state.inspector);
@@ -964,6 +1079,7 @@ mod tests {
             false,
             LayoutPreset::Balanced,
             DEFAULT_NAVIGATION_WIDTH,
+            false,
         );
         assert!(!layout.state.navigation);
         assert!(layout.state.inspector);
@@ -998,5 +1114,36 @@ mod tests {
             workspace.handle_key(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE));
         }
         assert_eq!(workspace.navigation_width, MAX_NAVIGATION_WIDTH);
+    }
+
+    #[test]
+    fn collapsed_navigation_fits_beside_content_on_narrow_terminals() {
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 30, 10),
+            false,
+            false,
+            LayoutPreset::Balanced,
+            DEFAULT_NAVIGATION_WIDTH,
+            true,
+        );
+        assert!(layout.state.navigation);
+        assert_eq!(layout.navigation.unwrap().width, COLLAPSED_NAVIGATION_WIDTH);
+        assert_eq!(layout.main.width, 21);
+    }
+
+    #[test]
+    fn collapsing_navigation_preserves_the_expanded_width() {
+        let mut workspace = Workspace::new();
+        workspace.focus = FocusArea::Navigation;
+        workspace.navigation_width = 28;
+
+        workspace.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(workspace.navigation_collapsed);
+        workspace.handle_key(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE));
+        assert_eq!(workspace.navigation_width, 28);
+
+        workspace.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(!workspace.navigation_collapsed);
+        assert_eq!(workspace.navigation_width, 28);
     }
 }
