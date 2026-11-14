@@ -98,7 +98,7 @@ stable plugin API; those are CH-10 work.
 
 **Depends:** CH-09 passes. Implement versioned manifests, host services/UI contributions, install/enable/disable, grants/revocation, compatibility errors, and an independently authored sample extension. **Verify:** no host recompilation, permission denial, uninstall safety and recovery. **Exclude:** automatic marketplace.
 
-### CH-11 · candidate v0.11.0 — Community beta
+### CH-11 · v0.11.0 — Community beta
 
 **Depends:** usable SDK, real feedback. Improve compatibility tests, diagnostics, sample plugins, supported release artifacts, checksums, docs and upgrade paths. **Verify:** clean external installation, version mismatch handling, preserved user data and reproducible samples. **Exclude:** unrestricted third-party distribution service.
 

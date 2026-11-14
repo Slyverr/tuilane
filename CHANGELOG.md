@@ -4,12 +4,16 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-14
+
+### Added
+
+- Build reproducible, checksummed x86_64 Linux archive artifacts for version tags and verify clean installations and data-preserving upgrades.
+
 ### Changed
 
-- Provide reproducible, checksummed Linux archives and validate task data across upgrades.
 - Open on an overview of the shared command, storage, service, event, and view foundations.
-- Remove the redundant full-width header and add a resizable Views panel with padded three-line entries.
-- Highlight the selected view across the full navigation block.
+- Use a resizable Views sidebar with padded three-row entries and full-block selection highlighting.
 - Use rounded panel borders and show the Views resizing controls when that panel is focused.
 
 ### Fixed
