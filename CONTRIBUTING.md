@@ -27,6 +27,13 @@ cargo run -p tuilane -- --version
 
 Use `cargo fmt --all` to apply formatting when needed. Select targeted checks during iteration and run full relevant checks before integration. Use `--locked` for reproducible release checks once the lockfile and environment support them; see [releasing](docs/releasing.md). Do not claim a command succeeded unless actually run.
 
+CI also checks terminal settings restoration through a pseudo-terminal. Run the same check locally after building the executable:
+
+```sh
+cargo build -p tuilane
+python3 scripts/check-terminal-lifecycle.py target/debug/tuilane
+```
+
 See [docs/coding-standards.md](docs/coding-standards.md) for test placement, error handling, dependency rules, portability, and the Definition of Done.
 
 ## Branches, worktrees, and contribution paths

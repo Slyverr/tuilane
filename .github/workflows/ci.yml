@@ -68,3 +68,7 @@ jobs:
         run: cargo run -p tuilane -- --help
       - name: Check CLI version
         run: cargo run -p tuilane -- --version
+      - name: Check terminal restoration
+        run: |
+          cargo build -p tuilane --locked
+          python3 scripts/check-terminal-lifecycle.py target/debug/tuilane

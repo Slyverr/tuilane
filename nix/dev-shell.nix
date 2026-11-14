@@ -3,6 +3,7 @@
   cargo,
   clippy,
   nixfmt,
+  python3,
   rust-analyzer,
   rustc,
   rustfmt,
@@ -14,6 +15,7 @@ mkShell {
     cargo
     clippy
     nixfmt
+    python3
     rust-analyzer
     rustc
     rustfmt
