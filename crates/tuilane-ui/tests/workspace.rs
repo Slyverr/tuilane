@@ -111,8 +111,17 @@ fn registered_views_navigate_and_can_be_removed() {
     let mut workspace = workspace_with_two_views();
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
 
-    workspace.handle_key(key(KeyCode::Right));
+    workspace.handle_key(key(KeyCode::Char('l')));
+    workspace.handle_key(key(KeyCode::Char('h')));
+    workspace.handle_key(key(KeyCode::Char('j')));
+    workspace.handle_key(key(KeyCode::Char('k')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+
+    workspace.handle_key(key(KeyCode::Down));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    workspace.handle_key(key(KeyCode::Up));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+    workspace.handle_key(key(KeyCode::Down));
     assert_eq!(workspace.view_count(), 2);
 
     let removed = workspace.remove_view(&ViewId::new("activity").unwrap());

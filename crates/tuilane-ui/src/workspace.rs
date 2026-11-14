@@ -253,18 +253,14 @@ impl Workspace {
             KeyCode::Char('d') => self.toggle_drawer(),
             KeyCode::Tab => self.advance_focus(false),
             KeyCode::BackTab => self.advance_focus(true),
-            KeyCode::Up | KeyCode::Char('k') if self.focus == FocusArea::Navigation => {
-                self.select_previous()
-            }
-            KeyCode::Down | KeyCode::Char('j') if self.focus == FocusArea::Navigation => {
-                self.select_next()
-            }
+            KeyCode::Up if self.focus == FocusArea::Navigation => self.select_previous(),
+            KeyCode::Down if self.focus == FocusArea::Navigation => self.select_next(),
             KeyCode::Char('k') if self.config.keymap() == KeymapPreset::Vim => {
                 self.select_previous()
             }
             KeyCode::Char('j') if self.config.keymap() == KeymapPreset::Vim => self.select_next(),
-            KeyCode::Left | KeyCode::Char('h') => self.select_previous(),
-            KeyCode::Right | KeyCode::Char('l') => self.select_next(),
+            KeyCode::Up => self.select_previous(),
+            KeyCode::Down => self.select_next(),
             _ => {}
         }
     }
@@ -306,9 +302,9 @@ impl Workspace {
         }
 
         let navigation_keys = if self.config.keymap() == KeymapPreset::Vim {
-            "h/l/j/k views"
+            "↑/↓ j/k views"
         } else {
-            "h/l views"
+            "↑/↓ views"
         };
         frame.render_widget(
             Paragraph::new(format!(
@@ -432,9 +428,14 @@ impl Workspace {
             height,
         };
         frame.render_widget(Clear, overlay);
+        let navigation_keys = if self.config.keymap() == KeymapPreset::Vim {
+            "↑/↓ or j/k  Move views when unhandled"
+        } else {
+            "↑/↓  Move views when unhandled"
+        };
         let text = Text::from(vec![
             Line::from("Workspace keys"),
-            Line::from("h/l  Move between views; ↑/↓ when Views has focus"),
+            Line::from(navigation_keys),
             Line::from("Tab / Shift-Tab  Move focus between visible panels"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
             Line::from("Ctrl-P  Open the command palette"),

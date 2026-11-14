@@ -677,13 +677,11 @@ fn is_shell_navigation_key(key: KeyEvent) -> bool {
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
         && matches!(
             key.code,
-            KeyCode::Left
-                | KeyCode::Right
-                | KeyCode::Up
+            KeyCode::Up
                 | KeyCode::Down
                 | KeyCode::Tab
                 | KeyCode::BackTab
-                | KeyCode::Char('h' | 'j' | 'k' | 'l' | 'i' | 'd' | 'q' | '?')
+                | KeyCode::Char('j' | 'k' | 'i' | 'd' | 'q' | '?')
         )
 }
 
