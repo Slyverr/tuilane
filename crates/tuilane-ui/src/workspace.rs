@@ -381,8 +381,8 @@ impl Workspace {
             (area.height.saturating_sub(2) / NAVIGATION_ENTRY_HEIGHT).max(1) as usize;
         let selected = self.selected.unwrap_or(0);
         let first = selected.saturating_sub(visible_count.saturating_sub(1));
-        let description_width = area.width.saturating_sub(6) as usize;
         let mut items = Vec::with_capacity(visible_count * 3);
+        let item_width = area.width.saturating_sub(2) as usize;
         for (index, view) in self
             .views
             .iter()
@@ -391,34 +391,33 @@ impl Workspace {
             .take(visible_count)
         {
             let is_selected = Some(index) == self.selected;
+            let item_style = self.config.theme().navigation_item_style(is_selected);
             let marker = if is_selected { "› " } else { "  " };
+            let icon = view.value().navigation_icon();
             let title = truncate_navigation_text(
                 view.descriptor().title(),
-                area.width.saturating_sub(6) as usize,
+                item_width.saturating_sub(4 + icon.chars().count()),
             );
-            let [description_first, description_second] =
-                wrap_navigation_description(view.descriptor().description(), description_width);
+            let text_width =
+                marker.chars().count() + icon.chars().count() + 1 + title.chars().count();
+            let padding_width = item_width.saturating_sub(text_width);
+
+            items.push(Line::from(Span::styled(" ".repeat(item_width), item_style)));
             items.push(Line::from(vec![
-                Span::styled(marker, self.config.theme().accent_style()),
+                Span::styled(marker, item_style),
                 Span::styled(
-                    view.value().navigation_icon(),
+                    icon,
                     if is_selected {
-                        self.config.theme().accent_style()
+                        item_style
                     } else {
-                        self.config.theme().muted_style()
+                        self.config.theme().accent_style()
                     },
                 ),
-                Span::raw(" "),
-                Span::styled(title, self.config.theme().panel_style(is_selected)),
+                Span::styled(" ", item_style),
+                Span::styled(title, item_style),
+                Span::styled(" ".repeat(padding_width), item_style),
             ]));
-            items.push(Line::from(vec![
-                Span::raw("    "),
-                Span::styled(description_first, self.config.theme().muted_style()),
-            ]));
-            items.push(Line::from(vec![
-                Span::raw("    "),
-                Span::styled(description_second, self.config.theme().muted_style()),
-            ]));
+            items.push(Line::from(Span::styled(" ".repeat(item_width), item_style)));
         }
         let block = Self::panel_block(
             "Views  [ ] width",
@@ -856,48 +855,6 @@ fn truncate_navigation_text(value: &str, max_width: usize) -> String {
     truncated
 }
 
-fn wrap_navigation_description(value: &str, max_width: usize) -> [String; 2] {
-    let max_width = max_width.max(1);
-    let mut lines = [String::new(), String::new()];
-    let mut line_index = 0;
-    let mut truncated = false;
-
-    for word in value.split_whitespace() {
-        let word_width = word.chars().count();
-        if !lines[line_index].is_empty()
-            && lines[line_index].chars().count() + 1 + word_width > max_width
-        {
-            line_index += 1;
-            if line_index == lines.len() {
-                truncated = true;
-                break;
-            }
-        }
-
-        if word_width > max_width {
-            lines[line_index] = word.chars().take(max_width).collect();
-            truncated = true;
-            break;
-        }
-        if !lines[line_index].is_empty() {
-            lines[line_index].push(' ');
-        }
-        lines[line_index].push_str(word);
-    }
-
-    if truncated {
-        let last = &mut lines[1];
-        if last.is_empty() {
-            last.push('…');
-        } else {
-            *last = last.chars().take(max_width.saturating_sub(1)).collect();
-            last.push('…');
-        }
-    }
-
-    lines
-}
-
 struct ShellRects {
     navigation: Option<Rect>,
     main: Rect,
@@ -1030,17 +987,5 @@ mod tests {
             workspace.handle_key(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE));
         }
         assert_eq!(workspace.navigation_width, MAX_NAVIGATION_WIDTH);
-    }
-
-    #[test]
-    fn navigation_descriptions_wrap_to_two_lines_and_truncate_overflow() {
-        let lines = wrap_navigation_description(
-            "Typed services provide host-mediated access between workspace features",
-            20,
-        );
-
-        assert_eq!(lines[0], "Typed services");
-        assert!(lines[1].ends_with('…'));
-        assert!(lines.iter().all(|line| line.chars().count() <= 20));
     }
 }

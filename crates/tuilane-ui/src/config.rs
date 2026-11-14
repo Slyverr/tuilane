@@ -50,6 +50,21 @@ impl ThemePreset {
             Self::HighContrast => Style::default().fg(Color::White),
         }
     }
+
+    pub(super) fn navigation_item_style(self, selected: bool) -> Style {
+        if !selected {
+            return Style::default();
+        }
+
+        let background = match self {
+            Self::Default => Color::Cyan,
+            Self::HighContrast => Color::Yellow,
+        };
+        Style::default()
+            .fg(Color::Black)
+            .bg(background)
+            .add_modifier(Modifier::BOLD)
+    }
 }
 
 /// Initial shell layout preset.

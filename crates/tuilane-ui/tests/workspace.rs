@@ -207,7 +207,8 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
         .iter()
         .find(|cell| cell.symbol() == "◇")
         .expect("selected view icon is rendered");
-    assert_eq!(selected_icon.fg, Color::Yellow);
+    assert_eq!(selected_icon.fg, Color::Black);
+    assert_eq!(selected_icon.bg, Color::Yellow);
 }
 
 #[test]
@@ -216,20 +217,29 @@ fn workspace_navigation_shows_view_icons_and_colored_key_hints() {
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    let cells = terminal.backend().buffer().content();
+    let buffer = terminal.backend().buffer();
+    let cells = buffer.content();
     let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
     assert!(text.contains("Views  [ ] width"));
     assert!(text.contains("◇ Overview"));
-    assert!(text.contains("test view contribution"));
     assert!(text.contains("j/k Views"));
+    assert!(!text.contains("test view contribution"));
     assert!(!text.contains("◆ tuilane"));
     assert!(!text.contains("[focus]"));
+
+    for row in 1..=3 {
+        assert_eq!(buffer[(1, row)].bg, Color::Cyan);
+        assert_eq!(buffer[(30, row)].bg, Color::Cyan);
+    }
+    assert_eq!(buffer[(1, 1)].symbol(), " ");
+    assert_eq!(buffer[(1, 3)].symbol(), " ");
 
     let icon = cells
         .iter()
         .find(|cell| cell.symbol() == "◇")
         .expect("navigation icon is rendered");
-    assert_eq!(icon.fg, Color::Cyan);
+    assert_eq!(icon.fg, Color::Black);
+    assert_eq!(icon.bg, Color::Cyan);
 }
 
 #[test]

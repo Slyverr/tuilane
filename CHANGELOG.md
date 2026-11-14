@@ -7,7 +7,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 ### Changed
 
 - Open on an overview of the shared command, storage, service, event, and view foundations.
-- Remove the redundant full-width header and add a resizable Views panel with three-line entries.
+- Remove the redundant full-width header and add a resizable Views panel with padded three-line entries.
+- Highlight the selected view across the full navigation block.
 - Use rounded panel borders and show the Views resizing controls when that panel is focused.
 
 ### Fixed
