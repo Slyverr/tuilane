@@ -218,6 +218,10 @@ impl View for ExternalPluginView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "◇"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         if self.model.is_none() && self.failure.is_none() {
             match self

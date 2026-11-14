@@ -4,6 +4,14 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+### Changed
+
+- Add clearer workspace navigation icons and key hints, with `j`/`k` reserved for switching views and arrow keys for in-view lists.
+
+### Fixed
+
+- Allow `k` and `j` to reach workspace navigation from Notes, Ideas, and Links while browsing their lists.
+
 ## [0.10.0] - 2026-11-14
 
 ### Added

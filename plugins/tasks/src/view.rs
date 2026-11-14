@@ -4,7 +4,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    text::Line,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
 use tuilane_core::CommandDispatcher;
@@ -175,26 +176,59 @@ impl TasksView {
     }
 
     fn task_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from(
-            "c create  e edit title  u due date  x complete/reopen  Delete remove  ↑/↓ select",
-        )];
+        let key_style = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let hint_style = Style::default().fg(Color::Gray);
+        let mut lines = vec![Line::from(vec![
+            Span::styled("c", key_style),
+            Span::styled(" Create   ", hint_style),
+            Span::styled("e", key_style),
+            Span::styled(" Edit   ", hint_style),
+            Span::styled("u", key_style),
+            Span::styled(" Due date   ", hint_style),
+            Span::styled("x", key_style),
+            Span::styled(" Complete   ", hint_style),
+            Span::styled("↑/↓", key_style),
+            Span::styled(" Select", hint_style),
+        ])];
         if self.tasks.is_empty() {
-            lines.push(Line::from("No tasks yet. Press c to create one."));
+            lines.push(Line::from(vec![
+                Span::styled("＋", Style::default().fg(Color::Cyan)),
+                Span::raw("  No tasks yet. Press "),
+                Span::styled("c", key_style),
+                Span::raw(" to create one."),
+            ]));
         }
         for (index, task) in self.tasks.iter().enumerate() {
             let selected = Some(index) == self.selected;
-            let marker = if selected { ">" } else { " " };
-            let state = match task.status() {
-                tuilane_plugin_api::tasks::TaskStatus::Open => "[ ]",
-                tuilane_plugin_api::tasks::TaskStatus::Completed => "[x]",
+            let marker = if selected { "›" } else { " " };
+            let (state, state_style) = match task.status() {
+                tuilane_plugin_api::tasks::TaskStatus::Open => {
+                    ("○", Style::default().fg(Color::Cyan))
+                }
+                tuilane_plugin_api::tasks::TaskStatus::Completed => {
+                    ("✓", Style::default().fg(Color::Green))
+                }
             };
             let due_date = task
                 .due_date()
-                .map_or_else(String::new, |date| format!("  due {}", date));
-            lines.push(Line::from(format!(
-                "{marker} {state} {}{due_date}",
-                task.title()
-            )));
+                .map_or_else(String::new, |date| format!("  ◷ {date}"));
+            lines.push(Line::from(vec![
+                Span::styled(marker, key_style),
+                Span::raw(" "),
+                Span::styled(state, state_style),
+                Span::raw("  "),
+                Span::styled(
+                    task.title().as_str().to_owned(),
+                    if selected {
+                        Style::default().add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    },
+                ),
+                Span::styled(due_date, Style::default().fg(Color::Yellow)),
+            ]));
         }
 
         match &self.input_mode {
@@ -240,6 +274,10 @@ impl TasksView {
 impl View for TasksView {
     fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
+    }
+
+    fn navigation_icon(&self) -> &'static str {
+        "✓"
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

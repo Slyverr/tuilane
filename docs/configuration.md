@@ -11,7 +11,7 @@ layout = "balanced" # balanced or focus
 keymap = "default" # default or vim; both support arrows and j/k for view navigation
 ```
 
-The `balanced` layout shows navigation when terminal width allows it; `focus` hides the navigation panel. The `high-contrast` theme uses brighter shell text and yellow accents. Use Up/Down or `j`/`k` to select views when the active view does not handle those keys. Both accepted keymap values use the same view-navigation keys.
+The `balanced` layout shows navigation when terminal width allows it; `focus` hides the navigation panel. The `high-contrast` theme uses brighter shell text and yellow accents. Use `j` to move down to the next view and `k` to move up to the previous view. Arrow keys move within a focused view list; when focus is on the Views panel, Up/Down also switch views. Text inputs can still accept `j` and `k` while editing. Both accepted keymap values use the same view-navigation keys.
 
 ## Optional local assistant
 

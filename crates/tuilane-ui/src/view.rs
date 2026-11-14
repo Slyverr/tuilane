@@ -45,12 +45,19 @@ pub trait View {
     /// Returns stable identity and display metadata for this view.
     fn descriptor(&self) -> &ViewDescriptor;
 
+    /// Returns a compact symbol for the workspace navigation list.
+    fn navigation_icon(&self) -> &'static str {
+        "◇"
+    }
+
     /// Renders the view's primary content.
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect);
 
     /// Handles a key event before the shell routes it to global navigation.
     ///
-    /// Return `true` when the view consumes the event.
+    /// Return `true` when the view consumes the event. Views should use arrow keys
+    /// for in-view vertical lists and leave `j`/`k` for workspace navigation,
+    /// except while an active text input needs those characters.
     fn handle_key(&mut self, _key: KeyEvent, _focus: super::FocusArea) -> bool {
         false
     }

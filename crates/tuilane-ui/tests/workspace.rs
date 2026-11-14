@@ -179,7 +179,7 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(!focus_text.contains("Views"));
+    assert_eq!(focus_text.matches("Views").count(), 1);
     assert!(focus_text.contains("Overview"));
 
     let mut themed_workspace = Workspace::with_config(WorkspaceConfig::new(
@@ -198,6 +198,26 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
         themed_terminal.backend().buffer().cell((1, 2)).unwrap().fg,
         Color::Yellow
     );
+}
+
+#[test]
+fn workspace_navigation_shows_view_icons_and_colored_key_hints() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let cells = terminal.backend().buffer().content();
+    let text = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+    assert!(text.contains("◆ tuilane"));
+    assert!(text.contains("◇ Overview"));
+    assert!(text.contains("j/k Views"));
+    assert!(!text.contains("[focus]"));
+
+    let icon = cells
+        .iter()
+        .find(|cell| cell.symbol() == "◇")
+        .expect("navigation icon is rendered");
+    assert_eq!(icon.fg, Color::Cyan);
 }
 
 #[test]

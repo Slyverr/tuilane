@@ -4,7 +4,8 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    text::{Line, Text},
+    style::{Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph},
 };
 use tuilane_core::{DuplicateViewId, ViewRegistry};
@@ -275,18 +276,31 @@ impl Workspace {
         self.last_layout = layout.state;
         self.normalize_focus(layout.state);
 
-        let current_descriptor = self
+        let header = self
             .selected
             .and_then(|index| self.views.get(index))
-            .map(|view| view.descriptor().clone());
-        let header_title = current_descriptor
-            .as_ref()
-            .map_or("Workspace".to_owned(), |view| view.title().to_owned());
-        frame.render_widget(
-            Paragraph::new(format!("tuilane  /  {header_title}"))
-                .style(self.config.theme().header_style()),
-            layout.header,
-        );
+            .map(|view| {
+                Line::from(vec![
+                    Span::styled("◆ tuilane", self.config.theme().header_style()),
+                    Span::styled("   /   ", self.config.theme().muted_style()),
+                    Span::styled(
+                        view.value().navigation_icon(),
+                        self.config.theme().accent_style(),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        view.descriptor().title(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                ])
+            })
+            .unwrap_or_else(|| {
+                Line::from(vec![Span::styled(
+                    "◆ tuilane  /  Workspace",
+                    self.config.theme().header_style(),
+                )])
+            });
+        frame.render_widget(Paragraph::new(header), layout.header);
 
         if let Some(navigation) = layout.navigation {
             self.render_navigation(frame, navigation);
@@ -299,12 +313,21 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
 
-        frame.render_widget(
-            Paragraph::new(
-                "Tab focus  ↑/↓ j/k views  Ctrl-P commands  i inspector  d drawer  ? help  q quit",
-            ),
-            layout.status,
-        );
+        let status = Line::from(vec![
+            Span::styled("j/k", self.config.theme().header_style()),
+            Span::styled(" Views   ", self.config.theme().muted_style()),
+            Span::styled("↑/↓", self.config.theme().header_style()),
+            Span::styled(" List   ", self.config.theme().muted_style()),
+            Span::styled("Tab", self.config.theme().header_style()),
+            Span::styled(" Focus   ", self.config.theme().muted_style()),
+            Span::styled("Ctrl-P", self.config.theme().header_style()),
+            Span::styled(" Commands   ", self.config.theme().muted_style()),
+            Span::styled("?", self.config.theme().header_style()),
+            Span::styled(" Help   ", self.config.theme().muted_style()),
+            Span::styled("q", self.config.theme().header_style()),
+            Span::styled(" Quit", self.config.theme().muted_style()),
+        ]);
+        frame.render_widget(Paragraph::new(status), layout.status);
 
         if self.help_open {
             self.render_help(frame, area);
@@ -320,17 +343,24 @@ impl Workspace {
             .iter()
             .enumerate()
             .map(|(index, view)| {
-                let marker = if Some(index) == self.selected {
-                    "> "
-                } else {
-                    "  "
-                };
-                let line = Line::from(format!("{marker}{}", view.descriptor().title()));
-                if Some(index) == self.selected {
-                    line.style(self.config.theme().panel_style(true))
-                } else {
-                    line
-                }
+                let selected = Some(index) == self.selected;
+                let marker = if selected { "› " } else { "  " };
+                Line::from(vec![
+                    Span::styled(marker, self.config.theme().accent_style()),
+                    Span::styled(
+                        view.value().navigation_icon(),
+                        if selected {
+                            self.config.theme().accent_style()
+                        } else {
+                            self.config.theme().muted_style()
+                        },
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        view.descriptor().title(),
+                        self.config.theme().panel_style(selected),
+                    ),
+                ])
             })
             .collect::<Vec<_>>();
         let block = Self::panel_block(
@@ -423,7 +453,8 @@ impl Workspace {
         frame.render_widget(Clear, overlay);
         let text = Text::from(vec![
             Line::from("Workspace keys"),
-            Line::from("↑/↓ or j/k  Move views when unhandled"),
+            Line::from("j  Next view     k  Previous view"),
+            Line::from("↑/↓  Move a list; switch views when Views is focused"),
             Line::from("Tab / Shift-Tab  Move focus between visible panels"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
             Line::from("Ctrl-P  Open the command palette"),
@@ -632,11 +663,6 @@ impl Workspace {
 
     fn panel_block<'a>(title: impl Into<Line<'a>>, focused: bool, theme: ThemePreset) -> Block<'a> {
         let title = title.into();
-        let title = if focused {
-            Line::from(format!("{title} [focus]"))
-        } else {
-            title
-        };
         Block::default()
             .borders(Borders::ALL)
             .border_style(theme.panel_style(focused))

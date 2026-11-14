@@ -193,6 +193,10 @@ impl View for SearchView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "⌕"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let mut lines = if self.saving_name {
             vec![

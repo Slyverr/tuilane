@@ -14,7 +14,7 @@ use tuilane_plugin_api::{
     tasks::TaskByIdV1,
 };
 use tuilane_storage::SqliteDatabase;
-use tuilane_ui::Workspace;
+use tuilane_ui::{FocusArea, View, Workspace};
 
 const IDEA: &str = "idea:00000000-0000-4000-8000-000000000001";
 const NOTE: &str = "note:00000000-0000-4000-8000-000000000001";
@@ -373,6 +373,16 @@ fn links_view_can_select_an_item_and_add_a_link_through_the_host() {
 
     assert!(rendered.contains("Research note"));
     assert!(rendered.contains(NOTE));
+}
+
+#[test]
+fn links_view_leaves_j_and_k_for_workspace_navigation() {
+    let events = EventBus::new();
+    let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
+    let mut view = LinksView::new(commands, &events);
+
+    assert!(!view.handle_key(key(KeyCode::Char('j')), FocusArea::Content));
+    assert!(!view.handle_key(key(KeyCode::Char('k')), FocusArea::Content));
 }
 
 #[test]

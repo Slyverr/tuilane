@@ -178,6 +178,10 @@ impl View for CalendarView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "▦"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(
             Paragraph::new(self.month_lines()).wrap(Wrap { trim: true }),

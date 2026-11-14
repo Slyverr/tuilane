@@ -330,6 +330,10 @@ impl View for LinksView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "↗"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
         frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
@@ -426,11 +430,11 @@ impl View for LinksView {
                 self.remove_selected();
                 true
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 self.move_selection(-1);
                 true
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 self.move_selection(1);
                 true
             }

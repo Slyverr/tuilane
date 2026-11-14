@@ -21,20 +21,32 @@ impl ThemePreset {
 
     pub(super) fn header_style(self) -> Style {
         match self {
-            Self::Default => Style::default().add_modifier(Modifier::BOLD),
-            Self::HighContrast => Style::default()
-                .fg(Color::Yellow)
+            Self::Default => Style::default()
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
+            Self::HighContrast => Self::accent_style(self).add_modifier(Modifier::BOLD),
+        }
+    }
+
+    pub(super) fn accent_style(self) -> Style {
+        match self {
+            Self::Default => Style::default().fg(Color::Cyan),
+            Self::HighContrast => Style::default().fg(Color::Yellow),
+        }
+    }
+
+    pub(super) fn muted_style(self) -> Style {
+        match self {
+            Self::Default => Style::default().fg(Color::Gray),
+            Self::HighContrast => Style::default().fg(Color::White),
         }
     }
 
     pub(super) fn panel_style(self, focused: bool) -> Style {
         match self {
-            Self::Default if focused => Style::default().add_modifier(Modifier::BOLD),
+            Self::Default if focused => Self::accent_style(self).add_modifier(Modifier::BOLD),
             Self::Default => Style::default(),
-            Self::HighContrast if focused => Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            Self::HighContrast if focused => Self::accent_style(self).add_modifier(Modifier::BOLD),
             Self::HighContrast => Style::default().fg(Color::White),
         }
     }

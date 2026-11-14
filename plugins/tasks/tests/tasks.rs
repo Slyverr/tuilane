@@ -783,10 +783,10 @@ fn task_view_routes_create_due_date_completion_and_delete_commands() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
     workspace.handle_key(key(KeyCode::Enter));
-    assert!(render_text(&mut workspace).contains("due 2026-11-20"));
+    assert!(render_text(&mut workspace).contains("◷ 2026-11-20"));
 
     workspace.handle_key(key(KeyCode::Char('x')));
-    assert!(render_text(&mut workspace).contains("[x] write q"));
+    assert!(render_text(&mut workspace).contains("✓  write q"));
 
     workspace.handle_key(key(KeyCode::Delete));
     workspace.handle_key(key(KeyCode::Char('y')));

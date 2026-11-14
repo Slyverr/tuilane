@@ -8,7 +8,7 @@ use tuilane_plugin_api::ideas::{IdeaByIdV1, IdeaCommand, IdeaCommandResult, Idea
 use tuilane_plugin_api::items::{ItemRef, ItemRemovedV1};
 use tuilane_plugin_api::search::IdeaSearchDocumentsV1;
 use tuilane_storage::SqliteDatabase;
-use tuilane_ui::Workspace;
+use tuilane_ui::{FocusArea, View, Workspace};
 use uuid::Uuid;
 
 struct TestDatabase(PathBuf);
@@ -175,13 +175,23 @@ fn ideas_view_captures_records_through_the_host_command_path() {
         .expect("register Ideas view");
 
     activate_palette_action(&mut workspace, "Capture idea");
-    for character in "Prototype offline capture".chars() {
+    for character in "Prototype offline capture jk".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
     workspace.handle_key(key(KeyCode::Enter));
     let text = render_text(&mut workspace);
 
-    assert!(text.contains("Prototype offline capture"));
+    assert!(text.contains("Prototype offline capture jk"));
+}
+
+#[test]
+fn ideas_view_leaves_j_and_k_for_workspace_navigation() {
+    let events = EventBus::new();
+    let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
+    let mut view = IdeasView::new(commands, &events);
+
+    assert!(!view.handle_key(key(KeyCode::Char('j')), FocusArea::Content));
+    assert!(!view.handle_key(key(KeyCode::Char('k')), FocusArea::Content));
 }
 
 #[test]

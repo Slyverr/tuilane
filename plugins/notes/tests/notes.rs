@@ -10,7 +10,7 @@ use tuilane_plugin_api::notes::{
 };
 use tuilane_plugin_api::search::NoteSearchDocumentsV1;
 use tuilane_storage::SqliteDatabase;
-use tuilane_ui::Workspace;
+use tuilane_ui::{FocusArea, View, Workspace};
 use uuid::Uuid;
 
 struct TestDatabase {
@@ -196,14 +196,24 @@ fn notes_view_creates_records_through_the_host_command_path() {
         .expect("register Notes view");
 
     activate_palette_action(&mut workspace, "Create note");
-    for character in "Draft".chars() {
+    for character in "Draft jk".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
     workspace.handle_key(key(KeyCode::Enter));
     let text = render_text(&mut workspace);
 
-    assert!(text.contains("Draft"));
+    assert!(text.contains("Draft jk"));
     assert!(text.contains("empty Markdown"));
+}
+
+#[test]
+fn notes_view_leaves_j_and_k_for_workspace_navigation() {
+    let events = EventBus::new();
+    let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
+    let mut view = NotesView::new(commands, &events);
+
+    assert!(!view.handle_key(key(KeyCode::Char('j')), FocusArea::Content));
+    assert!(!view.handle_key(key(KeyCode::Char('k')), FocusArea::Content));
 }
 
 #[test]

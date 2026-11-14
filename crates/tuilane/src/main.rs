@@ -1111,6 +1111,10 @@ impl View for OverviewView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "⌂"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(
             Paragraph::new(
@@ -1151,10 +1155,14 @@ impl View for ShortcutsView {
         &self.descriptor
     }
 
+    fn navigation_icon(&self) -> &'static str {
+        "⌘"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(
             Paragraph::new(
-                "Tab / Shift-Tab     Move focus\n↑/↓                 Select a registered view\nj/k (Vim keymap)    Select a registered view\nCtrl-P              Open command palette\n                     Search actions and create items\n/ in Search         Search items\nf in Search         Cycle item-kind filter\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
+                "j                   Next view\nk                   Previous view\n↑/↓                 Move within the focused list\nTab / Shift-Tab     Move focus\nCtrl-P              Open command palette\n                     Search actions and create items\n/ in Search         Search items\nf in Search         Cycle item-kind filter\n↑/↓ in Search       Select a result\ni                   Toggle inspector\nd                   Toggle drawer\n?                   Show help\nq                   Quit",
             ),
             area,
         );
