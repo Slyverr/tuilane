@@ -6,6 +6,7 @@
   rust-analyzer,
   rustc,
   rustfmt,
+  stdenv,
 }:
 
 mkShell {
@@ -16,5 +17,6 @@ mkShell {
     rust-analyzer
     rustc
     rustfmt
+    stdenv.cc
   ];
 }
