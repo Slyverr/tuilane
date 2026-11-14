@@ -1,0 +1,29 @@
+manifest-version = 1
+id = "org.example.hello"
+name = "Hello World"
+version = "0.1.0"
+api-version = "0.1.0"
+component = "plugin.wasm"
+
+[[services]]
+id = "workspace.info@1"
+permission = "workspace.read"
+
+[[services]]
+id = "workspace.search@1"
+permission = "workspace.search"
+
+[[commands]]
+id = "org.example.hello.greet@1"
+summary = "Return a greeting and workspace version."
+effect = "read-only"
+
+[[commands]]
+id = "org.example.hello.search@1"
+summary = "Search workspace items through the host."
+effect = "read-only"
+
+[[views]]
+id = "org.example.hello.main"
+title = "Hello World"
+description = "An independently built example plugin view."
