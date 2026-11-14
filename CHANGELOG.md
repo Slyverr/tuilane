@@ -4,6 +4,12 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-14
+
+No user-facing application behavior changed. This source release records the
+CH-09 Wasm/WIT feasibility decision; the product still does not load external
+plugins.
+
 ## [0.8.0] - 2026-11-14
 
 - Add a pinned Nix flake for Linux builds, profile installation, and development.
