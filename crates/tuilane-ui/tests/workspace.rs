@@ -1,9 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, widgets::Paragraph};
+use ratatui::{
+    Terminal, backend::TestBackend, layout::Rect, style::Color, text::Line, widgets::Paragraph,
+};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
     FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, Workspace,
-    WorkspaceConfig, WorkspaceError, render_empty_state,
+    WorkspaceConfig, WorkspaceError, icons, render_empty_state,
 };
 
 struct TestView {
@@ -213,7 +215,7 @@ fn clicking_a_tab_activates_its_view() {
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 14, 0,)));
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 15, 0,)));
 
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
     assert_eq!(workspace.focus(), FocusArea::Content);
@@ -375,7 +377,7 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(focus_text.contains("◦  Overview"));
+    assert!(focus_text.contains(&format!("{}  Overview", icons::DEFAULT)));
     assert!(focus_text.contains("Overview"));
 
     let mut themed_workspace = Workspace::with_config(WorkspaceConfig::new(
@@ -390,7 +392,7 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
     themed_terminal
         .draw(|frame| themed_workspace.render(frame))
         .unwrap();
-    let selected_label = &themed_terminal.backend().buffer()[(4, 0)];
+    let selected_label = &themed_terminal.backend().buffer()[(5, 0)];
     assert_eq!(selected_label.symbol(), "O");
     assert_eq!(selected_label.bg, Color::Yellow);
 }
@@ -402,26 +404,63 @@ fn tabs_render_icons_and_mark_the_immediately_active_view() {
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
     let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(2, 0)].symbol(), icons::DEFAULT);
+    assert_eq!(buffer[(1, 0)].symbol(), " ");
+    assert_eq!(buffer[(3, 0)].symbol(), " ");
+    assert_eq!(buffer[(4, 0)].symbol(), " ");
+    assert_eq!(buffer[(5, 0)].symbol(), "O");
+    assert_eq!(buffer[(17, 0)].symbol(), icons::DEFAULT);
+    assert_eq!(buffer[(17, 0)].fg, Color::Cyan);
     let text = buffer
         .content()
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(text.contains("◦  Overview"));
-    assert!(text.contains("◦  Activity"));
+    assert!(text.contains(&format!("{}  Overview", icons::DEFAULT)));
+    assert!(text.contains(&format!("{}  Activity", icons::DEFAULT)));
     assert!(!text.contains("Views"));
 
     workspace.handle_key(shift_key(KeyCode::Char('l')));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(14, 0)].bg, Color::Cyan);
+    assert_eq!(buffer[(15, 0)].bg, Color::Cyan);
     let content = buffer
         .content()
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
     assert!(content.contains("Activity"));
+}
+
+#[test]
+fn built_in_icons_fit_one_terminal_cell() {
+    let icons = [
+        icons::DEFAULT,
+        icons::OVERVIEW,
+        icons::TASKS,
+        icons::CALENDAR,
+        icons::PROJECTS,
+        icons::NOTES,
+        icons::IDEAS,
+        icons::LINKS,
+        icons::SEARCH,
+        icons::ASSISTANT,
+        icons::COMMANDS,
+        icons::STORAGE,
+        icons::SERVICES,
+        icons::EVENTS,
+        icons::VIEWS,
+        icons::PERMISSIONS,
+        icons::INSPECTOR,
+        icons::DRAWER,
+        icons::HELP,
+        icons::QUIT,
+    ];
+
+    for icon in icons {
+        assert_eq!(Line::from(icon).width(), 1, "icon {icon:?}");
+    }
 }
 
 #[test]
@@ -471,7 +510,7 @@ fn workspace_renders_on_wide_and_compact_terminals() {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("Overview"));
-        assert!(text.contains("◦  Overview"));
+        assert!(text.contains(&format!("{}  Overview", icons::DEFAULT)));
     }
 }
 

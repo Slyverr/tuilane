@@ -194,7 +194,7 @@ impl View for SearchView {
     }
 
     fn icon(&self) -> &'static str {
-        "⌕"
+        tuilane_ui::icons::SEARCH
     }
 
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {

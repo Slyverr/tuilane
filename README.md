@@ -8,6 +8,8 @@ The project is in early development. Core workflows run locally, the assistant i
 
 Install Rust and a native linker. From the workspace root, run the app or its test suite:
 
+Use a Nerd Font patched terminal font to display the TUI icons.
+
 ```sh
 cargo run -p tuilane
 cargo test --workspace

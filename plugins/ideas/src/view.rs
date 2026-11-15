@@ -188,7 +188,7 @@ impl View for IdeasView {
     }
 
     fn icon(&self) -> &'static str {
-        "✦"
+        tuilane_ui::icons::IDEAS
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

@@ -507,7 +507,7 @@ impl View for AssistantView {
     }
 
     fn icon(&self) -> &'static str {
-        "✧"
+        tuilane_ui::icons::ASSISTANT
     }
 
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {

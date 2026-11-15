@@ -329,7 +329,7 @@ impl View for LinksView {
     }
 
     fn icon(&self) -> &'static str {
-        "↗"
+        tuilane_ui::icons::LINKS
     }
 
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {

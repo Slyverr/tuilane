@@ -120,11 +120,12 @@ pub trait View {
     /// Returns stable identity and display metadata for this view.
     fn descriptor(&self) -> &ViewDescriptor;
 
-    /// Returns the compact icon displayed next to this view's tab title.
+    /// Returns the compact icon centered beside this view's tab title.
     ///
-    /// The title remains visible so the icon is never the only identifier.
+    /// The shell centers it in a three-cell slot; icons should occupy no more than
+    /// three terminal columns. The title remains visible as the view's identifier.
     fn icon(&self) -> &'static str {
-        "◦"
+        crate::icons::DEFAULT
     }
 
     /// Renders the view's primary content.

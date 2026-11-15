@@ -47,7 +47,7 @@ use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_search::{SearchPlugin, SearchView};
 use tuilane_storage::{DatabaseInspection, SqliteDatabase, inspect_database};
 use tuilane_tasks::{TasksPlugin, TasksView};
-use tuilane_ui::{View, Workspace, require_interactive_terminal};
+use tuilane_ui::{View, Workspace, icons, require_interactive_terminal};
 
 mod config;
 mod external_plugins;
@@ -1113,7 +1113,7 @@ impl View for OverviewView {
     }
 
     fn icon(&self) -> &'static str {
-        "◉"
+        icons::OVERVIEW
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -1125,9 +1125,21 @@ impl View for OverviewView {
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 )),
-                Line::from("⌘ Commands · ▤ Storage"),
-                Line::from("⇄ Services · ◷ Events"),
-                Line::from("▣ Views · ◇ Permissions"),
+                Line::from(format!(
+                    "{} Commands · {} Storage",
+                    icons::COMMANDS,
+                    icons::STORAGE
+                )),
+                Line::from(format!(
+                    "{} Services · {} Events",
+                    icons::SERVICES,
+                    icons::EVENTS
+                )),
+                Line::from(format!(
+                    "{} Views · {} Permissions",
+                    icons::VIEWS,
+                    icons::PERMISSIONS
+                )),
                 Line::from("Shift+H/L switches views · Alt+Tab opens picker"),
                 Line::from("j/k moves within lists"),
                 Line::from("? for help"),
@@ -1158,37 +1170,37 @@ impl View for OverviewView {
 
         let features = [
             (
-                "⌘",
+                icons::COMMANDS,
                 "Commands",
                 "CLI and TUI share validated operations",
                 Color::LightCyan,
             ),
             (
-                "▤",
+                icons::STORAGE,
                 "Storage",
                 "Local SQLite and versioned migrations",
                 Color::LightBlue,
             ),
             (
-                "⇄",
+                icons::SERVICES,
                 "Services",
                 "Typed access brokered by the host",
                 Color::LightGreen,
             ),
             (
-                "◷",
+                icons::EVENTS,
                 "Events",
                 "Committed changes notify subscribers",
                 Color::Yellow,
             ),
             (
-                "▣",
+                icons::VIEWS,
                 "Views",
                 "The host owns layout, focus, and navigation",
                 Color::LightMagenta,
             ),
             (
-                "◇",
+                icons::PERMISSIONS,
                 "Permissions",
                 "External capabilities need explicit grants",
                 Color::LightCyan,
@@ -1262,7 +1274,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     use super::OverviewView;
-    use tuilane_ui::View;
+    use tuilane_ui::{View, icons};
 
     #[test]
     fn overview_renders_feature_icons_and_navigation_guidance_at_common_widths() {
@@ -1284,14 +1296,14 @@ mod tests {
                 .map(|cell| cell.symbol())
                 .collect::<String>();
             assert!(text.contains("Core systems") || text.contains("clear foundations"));
-            assert!(text.contains("⌘ Commands"));
-            assert!(text.contains("▤ Storage"));
+            assert!(text.contains(&format!("{} Commands", icons::COMMANDS)));
+            assert!(text.contains(&format!("{} Storage", icons::STORAGE)));
             if width >= 56 && height >= 14 {
-                assert!(text.contains("╭ ⌘ Commands "));
+                assert!(text.contains(&format!("╭ {} Commands ", icons::COMMANDS)));
                 assert!(text.contains("Committed"));
                 assert!(text.contains("subscribers"));
             } else {
-                assert!(text.contains("⇄ Services"));
+                assert!(text.contains(&format!("{} Services", icons::SERVICES)));
             }
         }
     }

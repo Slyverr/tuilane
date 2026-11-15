@@ -13,7 +13,7 @@ use ratatui::{
 use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
 
-use crate::{LayoutPreset, ThemePreset, View, WorkspaceConfig};
+use crate::{LayoutPreset, ThemePreset, View, WorkspaceConfig, icons};
 
 const TAB_ROW_HEIGHT: u16 = 1;
 const SIDE_PANEL_WIDTH: u16 = 34;
@@ -753,22 +753,6 @@ impl Workspace {
                 break;
             }
             let remaining = area.x.saturating_add(area.width).saturating_sub(x);
-            let inner_width = remaining.saturating_sub(2);
-            if inner_width == 0 {
-                break;
-            }
-            let label = truncate_to_width(
-                &format!("{}  {}", view.value().icon(), view.descriptor().title()),
-                usize::from(inner_width),
-            );
-            let text = format!(" {label} ");
-            let width = Line::from(text.as_str())
-                .width()
-                .min(usize::from(remaining)) as u16;
-            if width == 0 {
-                break;
-            }
-            let item_area = Rect::new(x, area.y, width, 1);
             let style = if Some(index) == self.selected {
                 self.config.theme().navigation_item_style(true)
             } else if self.focus == FocusArea::Navigation && Some(index) == self.tab_cursor {
@@ -779,7 +763,26 @@ impl Workspace {
             } else {
                 self.config.theme().muted_style()
             };
-            frame.render_widget(Paragraph::new(Line::from(text).style(style)), item_area);
+            let icon_style = if Some(index) == self.selected {
+                style
+            } else {
+                self.config.theme().accent_style()
+            };
+            let Some(label) = tab_label(
+                view.value().icon(),
+                view.descriptor().title(),
+                usize::from(remaining),
+                style,
+                icon_style,
+            ) else {
+                break;
+            };
+            let width = label.width().min(usize::from(remaining)) as u16;
+            if width == 0 {
+                break;
+            }
+            let item_area = Rect::new(x, area.y, width, 1);
+            frame.render_widget(Paragraph::new(label).style(style), item_area);
             self.last_tab_items.push((index, item_area));
             x = x.saturating_add(width).saturating_add(1);
         }
@@ -1137,7 +1140,7 @@ impl Workspace {
                 label: "Toggle inspector".to_owned(),
                 context: "Workspace".to_owned(),
                 description: "Show details for the active view.".to_owned(),
-                icon: "◈",
+                icon: icons::INSPECTOR,
                 search_text: "toggle inspector details show active view".to_owned(),
                 action: PaletteAction::ToggleInspector,
             },
@@ -1145,7 +1148,7 @@ impl Workspace {
                 label: "Toggle drawer".to_owned(),
                 context: "Workspace".to_owned(),
                 description: "Open supplemental view content.".to_owned(),
-                icon: "◈",
+                icon: icons::DRAWER,
                 search_text: "toggle drawer supplemental open view content".to_owned(),
                 action: PaletteAction::ToggleDrawer,
             },
@@ -1153,7 +1156,7 @@ impl Workspace {
                 label: "Show help".to_owned(),
                 context: "Workspace".to_owned(),
                 description: "Show available keyboard and mouse shortcuts.".to_owned(),
-                icon: "◈",
+                icon: icons::HELP,
                 search_text: "show help keyboard shortcuts".to_owned(),
                 action: PaletteAction::ShowHelp,
             },
@@ -1161,7 +1164,7 @@ impl Workspace {
                 label: "Quit workspace".to_owned(),
                 context: "Workspace".to_owned(),
                 description: "Exit the workspace.".to_owned(),
-                icon: "◈",
+                icon: icons::QUIT,
                 search_text: "quit exit workspace".to_owned(),
                 action: PaletteAction::Quit,
             },
@@ -1526,6 +1529,35 @@ fn search_prompt_line(
         Span::raw(" ".repeat(padding)),
         Span::styled(count.to_owned(), theme.muted_style()),
     ])
+}
+
+fn tab_label(
+    icon: &str,
+    title: &str,
+    max_width: usize,
+    label_style: ratatui::style::Style,
+    icon_style: ratatui::style::Style,
+) -> Option<Line<'static>> {
+    const ICON_SLOT_WIDTH: usize = 3;
+    const FIXED_WIDTH: usize = 6;
+    if max_width < FIXED_WIDTH + 1 {
+        return None;
+    }
+
+    let icon = truncate_to_width(icon, ICON_SLOT_WIDTH);
+    let icon_width = Line::from(icon.as_str()).width().min(ICON_SLOT_WIDTH);
+    let left_padding = (ICON_SLOT_WIDTH - icon_width) / 2;
+    let right_padding = ICON_SLOT_WIDTH - icon_width - left_padding;
+    let title = truncate_to_width(title, max_width - FIXED_WIDTH);
+
+    Some(Line::from(vec![
+        Span::styled(" ", label_style),
+        Span::styled(" ".repeat(left_padding), label_style),
+        Span::styled(icon, icon_style),
+        Span::styled(" ".repeat(right_padding + 1), label_style),
+        Span::styled(title, label_style),
+        Span::styled(" ", label_style),
+    ]))
 }
 
 fn popup_hints_line(theme: ThemePreset, hints: &[(&str, &str)]) -> Line<'static> {

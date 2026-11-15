@@ -192,7 +192,7 @@ impl View for ProjectsView {
     }
 
     fn icon(&self) -> &'static str {
-        "◇"
+        tuilane_ui::icons::PROJECTS
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

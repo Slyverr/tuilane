@@ -1,6 +1,7 @@
 //! Terminal lifecycle, layout, navigation, and rendering for the tuilane workspace.
 
 mod config;
+pub mod icons;
 mod view;
 mod workspace;
 

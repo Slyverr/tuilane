@@ -178,7 +178,7 @@ impl View for CalendarView {
     }
 
     fn icon(&self) -> &'static str {
-        "◷"
+        tuilane_ui::icons::CALENDAR
     }
 
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {

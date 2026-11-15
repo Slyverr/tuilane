@@ -252,7 +252,7 @@ impl View for TasksView {
     }
 
     fn icon(&self) -> &'static str {
-        "✓"
+        tuilane_ui::icons::TASKS
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

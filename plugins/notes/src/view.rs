@@ -202,7 +202,7 @@ impl View for NotesView {
     }
 
     fn icon(&self) -> &'static str {
-        "≡"
+        tuilane_ui::icons::NOTES
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

@@ -17,6 +17,7 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 - Add spacing around panel titles to separate them from the border corners.
 - Highlight the active tab without repeating its title in the content border.
 - Center empty-state guidance and prioritize active-view actions over global navigation in the footer.
+- Use centered Nerd Font icons consistently across tabs, overview cards, and workspace commands.
 
 ## [0.11.0] - 2026-11-14
 
