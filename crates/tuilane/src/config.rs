@@ -2,13 +2,16 @@ use std::{
     env,
     error::Error,
     fmt, fs, io,
+    io::Write,
     path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use directories::ProjectDirs;
 use serde::Deserialize;
 use tuilane_assistant::{AssistantConfig, AssistantConfigError, DEFAULT_ENDPOINT};
-use tuilane_ui::{KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
+use tuilane_ui::{DashboardLayout, KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
 
 const CONFIG_ENV: &str = "TUILANE_CONFIG";
 const CONFIG_VERSION: u32 = 1;
@@ -19,6 +22,18 @@ pub enum ConfigError {
     Read {
         path: PathBuf,
         source: io::Error,
+    },
+    Write {
+        path: PathBuf,
+        source: io::Error,
+    },
+    DashboardSerialize {
+        path: PathBuf,
+        source: toml_edit::ser::Error,
+    },
+    DocumentParse {
+        path: PathBuf,
+        source: toml_edit::TomlError,
     },
     Parse {
         path: PathBuf,
@@ -52,6 +67,21 @@ impl fmt::Display for ConfigError {
                     path.display()
                 )
             }
+            Self::Write { path, source } => write!(
+                formatter,
+                "could not save configuration {}: {source}",
+                path.display()
+            ),
+            Self::DashboardSerialize { path, source } => write!(
+                formatter,
+                "could not encode dashboard configuration {}: {source}",
+                path.display()
+            ),
+            Self::DocumentParse { path, source } => write!(
+                formatter,
+                "invalid configuration document {}: {source}",
+                path.display()
+            ),
             Self::Parse { path, source } => {
                 write!(
                     formatter,
@@ -84,6 +114,9 @@ impl Error for ConfigError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Read { source, .. } => Some(source),
+            Self::Write { source, .. } => Some(source),
+            Self::DashboardSerialize { source, .. } => Some(source),
+            Self::DocumentParse { source, .. } => Some(source),
             Self::Parse { source, .. } => Some(source),
             Self::ConfigDirectoryUnavailable
             | Self::UnsupportedVersion { .. }
@@ -132,6 +165,8 @@ impl Default for AssistantFileConfig {
 pub(super) struct ApplicationConfig {
     pub(super) workspace: WorkspaceConfig,
     pub(super) assistant: Option<AssistantConfig>,
+    pub(super) path: PathBuf,
+    pub(super) original_dashboard: DashboardLayout,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +175,7 @@ struct UiConfig {
     theme: String,
     layout: String,
     keymap: String,
+    dashboard: DashboardLayout,
 }
 
 impl Default for UiConfig {
@@ -148,6 +184,7 @@ impl Default for UiConfig {
             theme: ThemePreset::default().as_str().to_owned(),
             layout: LayoutPreset::default().as_str().to_owned(),
             keymap: KeymapPreset::default().as_str().to_owned(),
+            dashboard: DashboardLayout::default(),
         }
     }
 }
@@ -193,7 +230,8 @@ impl FileConfig {
                 });
             }
         };
-        Ok(WorkspaceConfig::new(theme, layout, keymap))
+        Ok(WorkspaceConfig::new(theme, layout, keymap)
+            .with_dashboard_layout(self.ui.dashboard.clone()))
     }
 
     fn application(&self, path: &Path) -> Result<ApplicationConfig, ConfigError> {
@@ -224,8 +262,10 @@ impl FileConfig {
             None
         };
         Ok(ApplicationConfig {
+            original_dashboard: workspace.dashboard_layout().clone(),
             workspace,
             assistant,
+            path: path.to_owned(),
         })
     }
 }
@@ -248,13 +288,130 @@ pub(super) fn load_application_config() -> Result<ApplicationConfig, ConfigError
     match fs::read_to_string(&path) {
         Ok(contents) => parse_application_config(&contents, &path),
         Err(error) if error.kind() == io::ErrorKind::NotFound && !explicit => {
+            let workspace = WorkspaceConfig::default();
             Ok(ApplicationConfig {
-                workspace: WorkspaceConfig::default(),
+                original_dashboard: workspace.dashboard_layout().clone(),
+                workspace,
                 assistant: None,
+                path,
             })
         }
         Err(source) => Err(ConfigError::Read { path, source }),
     }
+}
+
+pub(super) fn save_dashboard_layout(
+    path: &Path,
+    original: &DashboardLayout,
+    dashboard: &DashboardLayout,
+) -> Result<(), ConfigError> {
+    if original == dashboard {
+        return Ok(());
+    }
+
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => Some(contents),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(source) => {
+            return Err(ConfigError::Read {
+                path: path.to_owned(),
+                source,
+            });
+        }
+    };
+    if let Some(contents) = &contents {
+        let file_config =
+            toml::from_str::<FileConfig>(contents).map_err(|source| ConfigError::Parse {
+                path: path.to_owned(),
+                source,
+            })?;
+        file_config.workspace(path)?;
+    }
+
+    let mut document = contents
+        .as_deref()
+        .unwrap_or_default()
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|source| ConfigError::DocumentParse {
+            path: path.to_owned(),
+            source,
+        })?;
+    let serialized_dashboard = toml_edit::ser::to_document(dashboard).map_err(|source| {
+        ConfigError::DashboardSerialize {
+            path: path.to_owned(),
+            source,
+        }
+    })?;
+    let dashboard_item = toml_edit::Item::Table(serialized_dashboard.into_table());
+    let ui = document
+        .as_table_mut()
+        .entry("ui")
+        .or_insert(toml_edit::table());
+    let Some(ui) = ui.as_table_mut() else {
+        return Err(ConfigError::UnsupportedValue {
+            key: "ui",
+            value: "expected a table".to_owned(),
+            path: path.to_owned(),
+        });
+    };
+    ui.insert("dashboard", dashboard_item);
+    let contents = document.to_string();
+    write_config_atomically(path, contents.as_bytes())
+}
+
+fn write_config_atomically(path: &Path, contents: &[u8]) -> Result<(), ConfigError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent).map_err(|source| ConfigError::Write {
+            path: path.to_owned(),
+            source,
+        })?;
+    }
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("tuilane.toml");
+    let temporary_path =
+        path.with_file_name(format!(".{file_name}.{}.{}.tmp", process::id(), nonce));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut temporary = options
+        .open(&temporary_path)
+        .map_err(|source| ConfigError::Write {
+            path: path.to_owned(),
+            source,
+        })?;
+
+    let write_result = temporary
+        .write_all(contents)
+        .and_then(|()| temporary.sync_all());
+    drop(temporary);
+    if let Err(source) = write_result {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(ConfigError::Write {
+            path: path.to_owned(),
+            source,
+        });
+    }
+    if let Err(source) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(ConfigError::Write {
+            path: path.to_owned(),
+            source,
+        });
+    }
+    Ok(())
 }
 
 pub fn check_config(path: Option<PathBuf>) -> Result<(), ConfigError> {
@@ -300,6 +457,7 @@ fn parse_application_config(contents: &str, path: &Path) -> Result<ApplicationCo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tuilane_plugin_api::{DashboardSize, DashboardWidgetId, DashboardWidgetPreference};
 
     #[test]
     fn missing_configuration_uses_builtin_presets() {
@@ -378,5 +536,44 @@ mod tests {
             parse_config("[unknown]\nvalue = true", Path::new("tuilane.toml")),
             Err(ConfigError::Parse { .. })
         ));
+    }
+
+    #[test]
+    fn dashboard_layout_saves_without_losing_other_configuration() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = env::temp_dir().join(format!(
+            "tuilane-dashboard-config-{}-{unique}",
+            process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("tuilane.toml");
+        fs::write(
+            &path,
+            "# Preserve user notes while the app updates its layout.\nversion = 1\n\n[ui]\ntheme = 'high-contrast' # keep the contrast\nlayout = 'focus'\nkeymap = 'vim'\n\n[assistant]\nenabled = true\nmodel = 'qwen3:8b'\nendpoint = 'http://127.0.0.1:11434'\n",
+        )
+        .unwrap();
+
+        let id = DashboardWidgetId::new("tuilane.tasks.open").unwrap();
+        let preference = DashboardWidgetPreference::new(id, DashboardSize::Wide);
+        let dashboard = DashboardLayout::new(vec![preference]);
+        save_dashboard_layout(&path, &DashboardLayout::default(), &dashboard).unwrap();
+
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("# Preserve user notes"));
+        assert!(saved.contains("# keep the contrast"));
+        let parsed = parse_application_config(&saved, &path).unwrap();
+        assert_eq!(parsed.workspace.dashboard_layout(), &dashboard);
+        assert_eq!(parsed.workspace.theme(), ThemePreset::HighContrast);
+        assert_eq!(
+            parsed.assistant.as_ref().map(AssistantConfig::model),
+            Some("qwen3:8b")
+        );
+
+        save_dashboard_layout(&path, &dashboard, &dashboard).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), saved);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -26,6 +26,7 @@ tuilane-storage.workspace = true
 tuilane-tasks.workspace = true
 tuilane-ui.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 
 [lints]
 workspace = true

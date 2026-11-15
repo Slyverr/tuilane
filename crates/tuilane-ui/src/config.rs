@@ -1,4 +1,5 @@
 use ratatui::style::{Color, Modifier, Style};
+use tuilane_plugin_api::DashboardLayout;
 
 /// Built-in shell accent themes supported by the terminal interface.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -108,35 +109,53 @@ impl KeymapPreset {
 }
 
 /// Supported presentation choices for the host-owned workspace shell.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WorkspaceConfig {
     theme: ThemePreset,
     layout: LayoutPreset,
     keymap: KeymapPreset,
+    dashboard: DashboardLayout,
 }
 
 impl WorkspaceConfig {
     /// Creates shell configuration from supported built-in presets.
-    pub const fn new(theme: ThemePreset, layout: LayoutPreset, keymap: KeymapPreset) -> Self {
+    pub fn new(theme: ThemePreset, layout: LayoutPreset, keymap: KeymapPreset) -> Self {
         Self {
             theme,
             layout,
             keymap,
+            dashboard: DashboardLayout::default(),
         }
     }
 
+    /// Uses a saved dashboard layout with the selected shell presets.
+    pub fn with_dashboard_layout(mut self, dashboard: DashboardLayout) -> Self {
+        self.dashboard = dashboard;
+        self
+    }
+
     /// Returns the selected shell theme.
-    pub const fn theme(self) -> ThemePreset {
+    pub const fn theme(&self) -> ThemePreset {
         self.theme
     }
 
     /// Returns the selected layout preset.
-    pub const fn layout(self) -> LayoutPreset {
+    pub const fn layout(&self) -> LayoutPreset {
         self.layout
     }
 
     /// Returns the selected navigation keymap.
-    pub const fn keymap(self) -> KeymapPreset {
+    pub const fn keymap(&self) -> KeymapPreset {
         self.keymap
+    }
+
+    /// Returns the user's saved dashboard widget order and settings.
+    pub fn dashboard_layout(&self) -> &DashboardLayout {
+        &self.dashboard
+    }
+
+    /// Returns mutable access to the dashboard layout edited by the host UI.
+    pub fn dashboard_layout_mut(&mut self) -> &mut DashboardLayout {
+        &mut self.dashboard
     }
 }

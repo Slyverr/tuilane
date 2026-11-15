@@ -9,13 +9,16 @@ use crossterm::event::{
 };
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
 use tuilane_core::{DuplicateViewId, ViewRegistry};
-use tuilane_plugin_api::ViewId;
+use tuilane_plugin_api::{
+    DashboardOption, DashboardOptionKind, DashboardOptionValue, DashboardSize, DashboardTone,
+    DashboardWidget, DashboardWidgetContent, DashboardWidgetPreference, ViewId,
+};
 
 use crate::{LayoutPreset, ThemePreset, View, ViewDialog, WorkspaceConfig, icons};
 
@@ -67,6 +70,12 @@ pub struct Workspace {
     switcher_open: bool,
     switcher_selected: usize,
     switcher_query: String,
+    dashboard_editor_open: bool,
+    dashboard_options_open: bool,
+    dashboard_cursor: usize,
+    dashboard_option_cursor: usize,
+    dashboard_scroll: usize,
+    dashboard_layout_dirty: bool,
     palette_query: String,
     palette_selected: usize,
     should_quit: bool,
@@ -76,6 +85,9 @@ pub struct Workspace {
     last_regions: ShellRects,
     last_tab_items: Vec<(usize, Rect)>,
     last_switcher_items: Vec<(usize, Rect)>,
+    last_dashboard_items: Vec<DashboardHit>,
+    last_dashboard_editor_items: Vec<DashboardEditorHit>,
+    last_dashboard_option_items: Vec<DashboardOptionHit>,
 }
 
 enum PaletteAction {
@@ -104,6 +116,231 @@ struct WorkspaceNotification {
     expires_at: Instant,
 }
 
+struct DashboardEntry {
+    owner_index: usize,
+    owner_icon: &'static str,
+    widget: DashboardWidget,
+    size: DashboardSize,
+}
+
+struct DashboardHit {
+    position: usize,
+    owner_index: usize,
+    widget_id: tuilane_plugin_api::DashboardWidgetId,
+    area: Rect,
+}
+
+#[derive(Clone, Copy)]
+struct DashboardEditorHit {
+    index: usize,
+    row: Rect,
+    visibility: Rect,
+    size: Rect,
+    options: Option<Rect>,
+}
+
+#[derive(Clone, Copy)]
+struct DashboardOptionHit {
+    index: usize,
+    area: Rect,
+}
+
+fn dashboard_span(size: DashboardSize, columns: u16) -> u16 {
+    match size {
+        DashboardSize::Compact => 1,
+        DashboardSize::Wide => 2.min(columns),
+        DashboardSize::Full => columns,
+    }
+}
+
+fn dashboard_rows(entries: Vec<DashboardEntry>, columns: u16) -> Vec<Vec<DashboardEntry>> {
+    let mut rows = Vec::new();
+    let mut row = Vec::new();
+    let mut used = 0_u16;
+
+    for entry in entries {
+        let span = dashboard_span(entry.size, columns);
+        if !row.is_empty() && used.saturating_add(span) > columns {
+            rows.push(std::mem::take(&mut row));
+            used = 0;
+        }
+        row.push(entry);
+        used += span;
+        if used >= columns {
+            rows.push(std::mem::take(&mut row));
+            used = 0;
+        }
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    rows
+}
+
+fn render_dashboard_widget(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    entry: &DashboardEntry,
+    selected: bool,
+    theme: ThemePreset,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let descriptor = entry.widget.descriptor();
+    let accent = if selected {
+        theme.accent_style().add_modifier(Modifier::BOLD)
+    } else {
+        theme.muted_style()
+    };
+    let title = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(entry.owner_icon, theme.accent_style()),
+        Span::raw(" "),
+        Span::styled(descriptor.title(), theme.header_style()),
+        Span::raw(" "),
+    ]);
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(accent)
+        .title(title);
+    let content_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines = match entry.widget.content() {
+        DashboardWidgetContent::Metric {
+            value,
+            label,
+            detail,
+            tone,
+        } => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    value.as_ref(),
+                    dashboard_tone_style(*tone, theme).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(label.as_ref(), theme.muted_style())),
+            ];
+            if let Some(detail) = detail {
+                lines.push(Line::from(detail.as_ref()).style(theme.muted_style()));
+            }
+            lines
+        }
+        DashboardWidgetContent::List {
+            items,
+            empty_message,
+        } => {
+            if items.is_empty() {
+                vec![Line::from(empty_message.as_ref()).style(theme.muted_style())]
+            } else {
+                items
+                    .iter()
+                    .take(usize::from(content_area.height.max(1)))
+                    .map(|item| {
+                        let mut spans = vec![
+                            Span::styled("› ", theme.accent_style()),
+                            Span::styled(item.title(), dashboard_tone_style(item.tone(), theme)),
+                        ];
+                        if let Some(detail) = item.detail() {
+                            spans.push(Span::raw("  "));
+                            spans.push(Span::styled(detail, theme.muted_style()));
+                        }
+                        Line::from(spans)
+                    })
+                    .collect()
+            }
+        }
+        DashboardWidgetContent::Message {
+            title,
+            detail,
+            tone,
+        } => vec![
+            Line::from(Span::styled(
+                title.as_ref(),
+                dashboard_tone_style(*tone, theme),
+            )),
+            Line::from(detail.as_ref()).style(theme.muted_style()),
+        ],
+    };
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: true }),
+        content_area,
+    );
+}
+
+fn dashboard_tone_style(tone: DashboardTone, theme: ThemePreset) -> Style {
+    match tone {
+        DashboardTone::Default => Style::default(),
+        DashboardTone::Muted => theme.muted_style(),
+        DashboardTone::Accent => theme.accent_style(),
+        DashboardTone::Positive => Style::default().fg(Color::Green),
+        DashboardTone::Warning => Style::default().fg(Color::Yellow),
+        DashboardTone::Critical => Style::default().fg(Color::Red),
+    }
+}
+
+fn default_option_value(option: &DashboardOption) -> DashboardOptionValue {
+    option.default_value()
+}
+
+fn option_value_matches(option: &DashboardOptionKind, value: &DashboardOptionValue) -> bool {
+    option.accepts(value)
+}
+
+fn adjust_option_value(
+    option: &DashboardOptionKind,
+    value: DashboardOptionValue,
+    forward: bool,
+) -> Option<DashboardOptionValue> {
+    match (option, value) {
+        (DashboardOptionKind::Toggle { .. }, DashboardOptionValue::Toggle(value)) => {
+            Some(DashboardOptionValue::Toggle(!value))
+        }
+        (DashboardOptionKind::Number { min, max, .. }, DashboardOptionValue::Number(value)) => {
+            let upper = (*max).max(*min);
+            let value = value.clamp(*min, upper);
+            Some(DashboardOptionValue::Number(if forward {
+                value.saturating_add(1).min(upper)
+            } else {
+                value.saturating_sub(1).max(*min)
+            }))
+        }
+        (DashboardOptionKind::Choice { choices, default }, DashboardOptionValue::Choice(value))
+            if !choices.is_empty() =>
+        {
+            let current = choices
+                .iter()
+                .position(|choice| choice.value() == value.as_ref())
+                .or_else(|| {
+                    choices
+                        .iter()
+                        .position(|choice| choice.value() == default.as_ref())
+                })
+                .unwrap_or(0);
+            let next = if forward {
+                (current + 1) % choices.len()
+            } else {
+                (current + choices.len() - 1) % choices.len()
+            };
+            Some(DashboardOptionValue::Choice(choices[next].value().into()))
+        }
+        (kind, _) => Some(default_option_value(&DashboardOption::new(
+            "",
+            "",
+            kind.clone(),
+        ))),
+    }
+}
+
+fn option_value_label(value: DashboardOptionValue) -> String {
+    match value {
+        DashboardOptionValue::Toggle(true) => "On".to_owned(),
+        DashboardOptionValue::Toggle(false) => "Off".to_owned(),
+        DashboardOptionValue::Number(value) => value.to_string(),
+        DashboardOptionValue::Choice(value) => value.into(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct ShellLayout {
     inspector: bool,
@@ -125,6 +362,12 @@ impl Default for Workspace {
             switcher_open: false,
             switcher_selected: 0,
             switcher_query: String::new(),
+            dashboard_editor_open: false,
+            dashboard_options_open: false,
+            dashboard_cursor: 0,
+            dashboard_option_cursor: 0,
+            dashboard_scroll: 0,
+            dashboard_layout_dirty: false,
             palette_query: String::new(),
             palette_selected: 0,
             should_quit: false,
@@ -134,6 +377,9 @@ impl Default for Workspace {
             last_regions: ShellRects::default(),
             last_tab_items: Vec::new(),
             last_switcher_items: Vec::new(),
+            last_dashboard_items: Vec::new(),
+            last_dashboard_editor_items: Vec::new(),
+            last_dashboard_option_items: Vec::new(),
         }
     }
 }
@@ -263,6 +509,11 @@ impl Workspace {
         self.should_quit
     }
 
+    /// Returns the current shell and dashboard configuration.
+    pub fn config(&self) -> &WorkspaceConfig {
+        &self.config
+    }
+
     fn selected_view_has_background_work(&self) -> bool {
         self.selected
             .and_then(|index| self.views.get(index))
@@ -312,6 +563,11 @@ impl Workspace {
             return;
         }
 
+        if self.dashboard_editor_open {
+            self.handle_dashboard_editor_key(key);
+            return;
+        }
+
         let view_consumed = self
             .selected
             .and_then(|index| self.views.get_mut(index))
@@ -319,6 +575,28 @@ impl Workspace {
         self.capture_notification();
         if view_consumed {
             return;
+        }
+
+        if self.is_dashboard_active() && self.focus == FocusArea::Content {
+            match key.code {
+                KeyCode::Char('e') if key.modifiers.is_empty() => {
+                    self.open_dashboard_editor();
+                    return;
+                }
+                KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
+                    self.move_dashboard_selection(false);
+                    return;
+                }
+                KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
+                    self.move_dashboard_selection(true);
+                    return;
+                }
+                KeyCode::Enter if key.modifiers.is_empty() => {
+                    self.activate_dashboard_selection();
+                    return;
+                }
+                _ => {}
+            }
         }
 
         if self.focus == FocusArea::Content
@@ -394,6 +672,9 @@ impl Workspace {
     /// Clicking or scrolling over a tab activates it. Clicking another visible
     /// panel moves keyboard focus to that panel.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) -> bool {
+        if self.dashboard_editor_open {
+            return self.handle_dashboard_editor_mouse(mouse);
+        }
         if self.help_open || self.palette_open {
             return false;
         }
@@ -417,7 +698,19 @@ impl Workspace {
         }
 
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => self.focus_at(mouse.column, mouse.row),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if self.is_dashboard_active()
+                    && let Some((owner_index, widget_id)) = self
+                        .last_dashboard_items
+                        .iter()
+                        .find(|hit| rect_contains(hit.area, mouse.column, mouse.row))
+                        .map(|hit| (hit.owner_index, hit.widget_id.clone()))
+                {
+                    self.activate_dashboard_view(owner_index, &widget_id);
+                    return true;
+                }
+                self.focus_at(mouse.column, mouse.row)
+            }
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 if !rect_contains(self.last_regions.tabs, mouse.column, mouse.row) {
                     return false;
@@ -431,6 +724,47 @@ impl Workspace {
             }
             _ => false,
         }
+    }
+
+    fn handle_dashboard_editor_mouse(&mut self, mouse: MouseEvent) -> bool {
+        if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+            return true;
+        }
+
+        if self.dashboard_options_open {
+            if let Some(hit) = self
+                .last_dashboard_option_items
+                .iter()
+                .find(|hit| rect_contains(hit.area, mouse.column, mouse.row))
+            {
+                let hit = *hit;
+                let forward =
+                    mouse.column >= hit.area.x.saturating_add(hit.area.width.saturating_div(2));
+                self.dashboard_option_cursor = hit.index;
+                self.adjust_dashboard_option(forward);
+            }
+            return true;
+        }
+
+        if let Some(hit) = self
+            .last_dashboard_editor_items
+            .iter()
+            .find(|hit| rect_contains(hit.row, mouse.column, mouse.row))
+            .copied()
+        {
+            self.dashboard_cursor = hit.index;
+            if rect_contains(hit.visibility, mouse.column, mouse.row) {
+                self.toggle_dashboard_widget();
+            } else if rect_contains(hit.size, mouse.column, mouse.row) {
+                self.resize_dashboard_widget(true);
+            } else if hit
+                .options
+                .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+            {
+                self.open_dashboard_options();
+            }
+        }
+        true
     }
 
     fn focus_at(&mut self, column: u16, row: u16) -> bool {
@@ -752,6 +1086,9 @@ impl Workspace {
         if self.switcher_open {
             self.render_tab_switcher(frame, area);
         }
+        if self.dashboard_editor_open {
+            self.render_dashboard_editor(frame, area);
+        }
     }
 
     fn render_tabs(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -827,9 +1164,13 @@ impl Workspace {
             );
             return;
         };
-        let Some(view) = self.views.get_mut(index) else {
+        let is_dashboard = self
+            .views
+            .get(index)
+            .is_some_and(|view| view.value().is_dashboard());
+        if self.views.get(index).is_none() {
             return;
-        };
+        }
         let block = Self::panel_block(
             Line::default(),
             self.focus == FocusArea::Content,
@@ -837,7 +1178,591 @@ impl Workspace {
         );
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        view.value_mut().render(frame, inner);
+        if is_dashboard {
+            self.render_dashboard(frame, inner);
+        } else {
+            if let Some(view) = self.views.get_mut(index) {
+                view.value_mut().render(frame, inner);
+            }
+        }
+    }
+
+    fn is_dashboard_active(&self) -> bool {
+        self.selected
+            .and_then(|index| self.views.get(index))
+            .is_some_and(|view| view.value().is_dashboard())
+    }
+
+    fn collect_dashboard_entries(&mut self, include_hidden: bool) -> Vec<DashboardEntry> {
+        let layout = self.config.dashboard_layout().clone();
+        let mut entries = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for owner_index in 0..self.views.len() {
+            let Some(registered) = self.views.get_mut(owner_index) else {
+                continue;
+            };
+            let owner_icon = registered.value().icon();
+            let widgets = registered.value_mut().dashboard_widgets(&layout);
+            for widget in widgets {
+                let id = widget.descriptor().id();
+                if !seen.insert(id.clone()) {
+                    continue;
+                }
+                let preference = layout.preference(id);
+                if !include_hidden && preference.is_some_and(|value| !value.visible()) {
+                    continue;
+                }
+                let size =
+                    preference.map_or(widget.descriptor().default_size(), |value| value.size());
+                entries.push(DashboardEntry {
+                    owner_index,
+                    owner_icon,
+                    widget,
+                    size,
+                });
+            }
+        }
+
+        entries.sort_by_key(|entry| {
+            layout
+                .widgets()
+                .iter()
+                .position(|saved| saved.id() == entry.widget.descriptor().id())
+                .unwrap_or(usize::MAX)
+        });
+        entries
+    }
+
+    fn render_dashboard(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.last_dashboard_items.clear();
+        let mut entries = self.collect_dashboard_entries(false);
+        if entries.is_empty() {
+            crate::render_empty_state(
+                frame,
+                area,
+                "Your overview is empty",
+                "Press e to add widgets from the available views.",
+            );
+            return;
+        }
+
+        let columns = match area.width {
+            0..=54 => 1,
+            55..=94 => 2,
+            _ => 3,
+        };
+        let rows = dashboard_rows(std::mem::take(&mut entries), columns);
+        self.dashboard_cursor = self
+            .dashboard_cursor
+            .min(rows.iter().map(Vec::len).sum::<usize>().saturating_sub(1));
+
+        let row_capacity = usize::from(area.height.saturating_add(1) / 7).max(1);
+        let mut row_start = 0;
+        let selected_row = rows
+            .iter()
+            .position(|row| {
+                let contains_selection = self.dashboard_cursor < row_start + row.len();
+                row_start += row.len();
+                contains_selection
+            })
+            .unwrap_or(0);
+        if selected_row < self.dashboard_scroll {
+            self.dashboard_scroll = selected_row;
+        } else if selected_row >= self.dashboard_scroll.saturating_add(row_capacity) {
+            self.dashboard_scroll = selected_row.saturating_add(1).saturating_sub(row_capacity);
+        }
+        self.dashboard_scroll = self
+            .dashboard_scroll
+            .min(rows.len().saturating_sub(row_capacity));
+
+        let visible_rows =
+            &rows[self.dashboard_scroll..rows.len().min(self.dashboard_scroll + row_capacity)];
+        let row_areas = Layout::vertical(vec![Constraint::Min(6); visible_rows.len()])
+            .spacing(1)
+            .split(area);
+        let theme = self.config.theme();
+        let mut absolute_index = rows
+            .iter()
+            .take(self.dashboard_scroll)
+            .map(Vec::len)
+            .sum::<usize>();
+        for (row, row_area) in visible_rows.iter().zip(row_areas.iter()) {
+            let column_areas = Layout::horizontal(
+                (0..columns)
+                    .map(|_| Constraint::Ratio(1, u32::from(columns)))
+                    .collect::<Vec<_>>(),
+            )
+            .spacing(1)
+            .split(*row_area);
+            let mut column = 0_usize;
+            for entry in row {
+                let span = usize::from(dashboard_span(entry.size, columns));
+                let Some(first) = column_areas.get(column) else {
+                    break;
+                };
+                let Some(last) = column_areas.get(column + span - 1) else {
+                    break;
+                };
+                let cell = Rect::new(
+                    first.x,
+                    row_area.y,
+                    last.x.saturating_add(last.width).saturating_sub(first.x),
+                    row_area.height,
+                );
+                let selected = absolute_index == self.dashboard_cursor;
+                render_dashboard_widget(frame, cell, entry, selected, theme);
+                self.last_dashboard_items.push(DashboardHit {
+                    position: absolute_index,
+                    owner_index: entry.owner_index,
+                    widget_id: entry.widget.descriptor().id().clone(),
+                    area: cell,
+                });
+                absolute_index += 1;
+                column += span;
+            }
+        }
+    }
+
+    fn move_dashboard_selection(&mut self, forward: bool) {
+        let entries = self.collect_dashboard_entries(false);
+        if entries.is_empty() {
+            self.dashboard_cursor = 0;
+            return;
+        }
+        self.dashboard_cursor = if forward {
+            (self.dashboard_cursor + 1) % entries.len()
+        } else {
+            (self.dashboard_cursor + entries.len() - 1) % entries.len()
+        };
+    }
+
+    fn activate_dashboard_selection(&mut self) {
+        if let Some((owner_index, widget_id)) = self
+            .last_dashboard_items
+            .iter()
+            .find(|hit| hit.position == self.dashboard_cursor)
+            .map(|hit| (hit.owner_index, hit.widget_id.clone()))
+        {
+            self.activate_dashboard_view(owner_index, &widget_id);
+        }
+    }
+
+    fn activate_dashboard_view(
+        &mut self,
+        index: usize,
+        widget_id: &tuilane_plugin_api::DashboardWidgetId,
+    ) {
+        if index < self.views.len() {
+            if let Some(view) = self.views.get_mut(index) {
+                view.value_mut().open_dashboard_widget(widget_id);
+            }
+            self.selected = Some(index);
+            self.tab_cursor = Some(index);
+            self.focus = FocusArea::Content;
+            self.dashboard_scroll = 0;
+        }
+    }
+
+    fn open_dashboard_editor(&mut self) {
+        if !self.is_dashboard_active() || self.focus != FocusArea::Content {
+            return;
+        }
+        let entries = self.collect_dashboard_entries(true);
+        let layout = self.config.dashboard_layout_mut();
+        for entry in &entries {
+            let descriptor = entry.widget.descriptor();
+            if layout.preference(descriptor.id()).is_none() {
+                layout.set_preference(DashboardWidgetPreference::new(
+                    descriptor.id().clone(),
+                    descriptor.default_size(),
+                ));
+            }
+            if let Some(preference) = layout.preference_mut(descriptor.id()) {
+                for option in descriptor.options() {
+                    let valid = preference
+                        .option(option.id())
+                        .is_some_and(|value| option_value_matches(option.kind(), value));
+                    if !valid {
+                        preference.set_option(option.id(), default_option_value(option));
+                    }
+                }
+            }
+        }
+        self.dashboard_editor_open = true;
+        self.dashboard_options_open = false;
+        self.dashboard_cursor = 0;
+        self.dashboard_option_cursor = 0;
+        self.dashboard_layout_dirty = false;
+    }
+
+    fn handle_dashboard_editor_key(&mut self, key: KeyEvent) {
+        if self.dashboard_options_open {
+            self.handle_dashboard_options_key(key);
+            return;
+        }
+
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => self.reorder_dashboard_widget(-1),
+                KeyCode::Down | KeyCode::Char('j') => self.reorder_dashboard_widget(1),
+                _ => {}
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.close_dashboard_editor(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.move_editor_selection(false);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.move_editor_selection(true);
+            }
+            KeyCode::Char(' ') => self.toggle_dashboard_widget(),
+            KeyCode::Char('o') => self.open_dashboard_options(),
+            KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Right => {
+                self.resize_dashboard_widget(true);
+            }
+            KeyCode::Char('-') | KeyCode::Left => self.resize_dashboard_widget(false),
+            _ => {}
+        }
+    }
+
+    fn move_editor_selection(&mut self, forward: bool) {
+        let entries = self.collect_dashboard_entries(true);
+        if entries.is_empty() {
+            self.dashboard_cursor = 0;
+        } else if forward {
+            self.dashboard_cursor = (self.dashboard_cursor + 1) % entries.len();
+        } else {
+            self.dashboard_cursor = (self.dashboard_cursor + entries.len() - 1) % entries.len();
+        }
+        self.dashboard_option_cursor = 0;
+    }
+
+    fn current_editor_widget(&mut self) -> Option<DashboardEntry> {
+        self.collect_dashboard_entries(true)
+            .into_iter()
+            .nth(self.dashboard_cursor)
+    }
+
+    fn toggle_dashboard_widget(&mut self) {
+        let Some(entry) = self.current_editor_widget() else {
+            return;
+        };
+        let id = entry.widget.descriptor().id();
+        if let Some(preference) = self.config.dashboard_layout_mut().preference_mut(id) {
+            preference.set_visible(!preference.visible());
+            self.dashboard_layout_dirty = true;
+        }
+    }
+
+    fn resize_dashboard_widget(&mut self, wider: bool) {
+        let Some(entry) = self.current_editor_widget() else {
+            return;
+        };
+        let id = entry.widget.descriptor().id();
+        if let Some(preference) = self.config.dashboard_layout_mut().preference_mut(id) {
+            let next = match (preference.size(), wider) {
+                (DashboardSize::Compact, true) => DashboardSize::Wide,
+                (DashboardSize::Wide, true) => DashboardSize::Full,
+                (DashboardSize::Full, true) => DashboardSize::Compact,
+                (DashboardSize::Full, false) => DashboardSize::Wide,
+                (DashboardSize::Wide, false) => DashboardSize::Compact,
+                (DashboardSize::Compact, false) => DashboardSize::Full,
+            };
+            preference.set_size(next);
+            self.dashboard_layout_dirty = true;
+        }
+    }
+
+    fn reorder_dashboard_widget(&mut self, direction: isize) {
+        let Some(entry) = self.current_editor_widget() else {
+            return;
+        };
+        if self
+            .config
+            .dashboard_layout_mut()
+            .move_widget(entry.widget.descriptor().id(), direction)
+        {
+            self.dashboard_cursor = self.dashboard_cursor.saturating_add_signed(direction);
+            self.dashboard_layout_dirty = true;
+        }
+    }
+
+    fn open_dashboard_options(&mut self) {
+        let Some(entry) = self.current_editor_widget() else {
+            return;
+        };
+        if entry.widget.descriptor().options().is_empty() {
+            return;
+        }
+        self.dashboard_options_open = true;
+        self.dashboard_option_cursor = 0;
+    }
+
+    fn handle_dashboard_options_key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Esc {
+            self.dashboard_options_open = false;
+            return;
+        }
+        let Some(entry) = self.current_editor_widget() else {
+            self.dashboard_options_open = false;
+            return;
+        };
+        let options = entry.widget.descriptor().options();
+        if options.is_empty() {
+            self.dashboard_options_open = false;
+            return;
+        }
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.dashboard_option_cursor =
+                    (self.dashboard_option_cursor + options.len() - 1) % options.len();
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.dashboard_option_cursor = (self.dashboard_option_cursor + 1) % options.len();
+            }
+            KeyCode::Left => self.adjust_dashboard_option(false),
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') => {
+                self.adjust_dashboard_option(true);
+            }
+            _ => {}
+        }
+    }
+
+    fn adjust_dashboard_option(&mut self, forward: bool) {
+        let Some(entry) = self.current_editor_widget() else {
+            return;
+        };
+        let Some(option) = entry
+            .widget
+            .descriptor()
+            .options()
+            .get(self.dashboard_option_cursor)
+            .cloned()
+        else {
+            return;
+        };
+        let id = entry.widget.descriptor().id();
+        let Some(preference) = self.config.dashboard_layout_mut().preference_mut(id) else {
+            return;
+        };
+        let previous = preference
+            .option(option.id())
+            .cloned()
+            .unwrap_or_else(|| default_option_value(&option));
+        if let Some(next) = adjust_option_value(option.kind(), previous, forward) {
+            preference.set_option(option.id(), next);
+            self.dashboard_layout_dirty = true;
+        }
+    }
+
+    fn close_dashboard_editor(&mut self) {
+        self.dashboard_editor_open = false;
+        self.dashboard_options_open = false;
+        if self.dashboard_layout_dirty {
+            self.notification = Some(WorkspaceNotification {
+                message: "Overview updated".to_owned(),
+                expires_at: Instant::now() + NOTIFICATION_DURATION,
+            });
+        }
+        self.dashboard_layout_dirty = false;
+    }
+
+    fn render_dashboard_editor(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.last_dashboard_editor_items.clear();
+        self.last_dashboard_option_items.clear();
+        let mut controls = Vec::new();
+        let entries = self.collect_dashboard_entries(true);
+        let width = area.width.saturating_sub(4).min(78);
+        let height = area.height.saturating_sub(4).min(24);
+        if width < 24 || height < 7 {
+            return;
+        }
+        let overlay = Rect {
+            x: area.x + (area.width - width) / 2,
+            y: area.y + (area.height - height) / 2,
+            width,
+            height,
+        };
+        let theme = self.config.theme();
+        let title = if self.dashboard_options_open {
+            entries
+                .get(self.dashboard_cursor)
+                .map_or("Widget options", |entry| entry.widget.descriptor().title())
+        } else {
+            "Customize overview"
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(theme.accent_style())
+            .title(Line::from(format!(" {title} ")).style(theme.header_style()));
+        let inner = block.inner(overlay);
+        frame.render_widget(Clear, overlay);
+        frame.render_widget(block, overlay);
+
+        let mut lines = Vec::new();
+        if self.dashboard_options_open {
+            let options = entries
+                .get(self.dashboard_cursor)
+                .map(|entry| entry.widget.descriptor().options())
+                .unwrap_or_default();
+            if options.is_empty() {
+                lines.push(Line::from("This widget has no options."));
+            } else {
+                for (index, option) in options.iter().enumerate() {
+                    let id = entries[self.dashboard_cursor].widget.descriptor().id();
+                    let value = self
+                        .config
+                        .dashboard_layout()
+                        .preference(id)
+                        .and_then(|preference| preference.option(option.id()))
+                        .cloned()
+                        .unwrap_or_else(|| default_option_value(option));
+                    let selected = index == self.dashboard_option_cursor;
+                    let marker = if selected { "›" } else { " " };
+                    let item_area = Rect::new(
+                        inner.x,
+                        inner.y.saturating_add(lines.len() as u16),
+                        inner.width,
+                        1,
+                    );
+                    self.last_dashboard_option_items.push(DashboardOptionHit {
+                        index,
+                        area: item_area,
+                    });
+                    let style = if selected {
+                        theme.navigation_item_style(true)
+                    } else {
+                        Style::default()
+                    };
+                    lines.push(
+                        Line::from(format!(
+                            "{marker}  {}  {}",
+                            option.label(),
+                            option_value_label(value)
+                        ))
+                        .style(style),
+                    );
+                }
+            }
+            lines.push(Line::from("↑/↓ Choose   ←/→ Change   Esc Back").style(theme.muted_style()));
+        } else if entries.is_empty() {
+            lines.push(Line::from(
+                "No views currently contribute dashboard widgets.",
+            ));
+            lines.push(Line::from(
+                "Widgets will appear here as features are enabled.",
+            ));
+        } else {
+            let visible_rows = usize::from(inner.height.saturating_sub(2) / 2).max(1);
+            let start = self
+                .dashboard_cursor
+                .saturating_sub(visible_rows.saturating_sub(1));
+            for (index, entry) in entries.iter().enumerate().skip(start).take(visible_rows) {
+                let id = entry.widget.descriptor().id();
+                let preference = self.config.dashboard_layout().preference(id);
+                let enabled = preference.is_some_and(|value| value.visible());
+                let size = preference.map_or(entry.widget.descriptor().default_size(), |value| {
+                    value.size()
+                });
+                let selected = index == self.dashboard_cursor;
+                let style = if selected {
+                    theme.navigation_item_style(true)
+                } else if enabled {
+                    theme.panel_style(false)
+                } else {
+                    theme.muted_style()
+                };
+                let mark = if enabled { "✓" } else { "○" };
+                let width = match size {
+                    DashboardSize::Compact => "compact",
+                    DashboardSize::Wide => "wide",
+                    DashboardSize::Full => "full",
+                };
+                let row_area = Rect::new(
+                    inner.x,
+                    inner.y.saturating_add(lines.len() as u16),
+                    inner.width,
+                    1,
+                );
+                let has_options = !entry.widget.descriptor().options().is_empty();
+                let label_width = 12.min(inner.width);
+                let options_width = if has_options {
+                    10.min(inner.width.saturating_sub(label_width))
+                } else {
+                    0
+                };
+                let size_width = 10.min(inner.width.saturating_sub(label_width + options_width));
+                let text_width = inner
+                    .width
+                    .saturating_sub(options_width.saturating_add(size_width));
+                let label_area = Rect::new(inner.x, row_area.y, text_width, 1);
+                let size_area = Rect::new(
+                    inner
+                        .x
+                        .saturating_add(inner.width.saturating_sub(size_width)),
+                    row_area.y,
+                    size_width,
+                    1,
+                );
+                let options_area = (has_options && options_width > 0).then(|| {
+                    Rect::new(
+                        size_area.x.saturating_sub(options_width),
+                        row_area.y,
+                        options_width,
+                        1,
+                    )
+                });
+                self.last_dashboard_editor_items.push(DashboardEditorHit {
+                    index,
+                    row: row_area,
+                    visibility: Rect::new(inner.x, row_area.y, 5.min(inner.width), 1),
+                    size: size_area,
+                    options: options_area,
+                });
+                controls.push((
+                    label_area,
+                    format!(
+                        "{} {}  {}",
+                        if selected { "›" } else { " " },
+                        mark,
+                        entry.widget.descriptor().title(),
+                    ),
+                    Alignment::Left,
+                    style,
+                ));
+                if let Some(options_area) = options_area {
+                    controls.push((
+                        options_area,
+                        "[Options]".to_owned(),
+                        Alignment::Right,
+                        style,
+                    ));
+                }
+                controls.push((size_area, format!("[{width}]"), Alignment::Right, style));
+                lines.push(Line::default());
+                lines.push(
+                    Line::from(format!(
+                        "  {}  {}",
+                        entry.owner_icon,
+                        entry.widget.descriptor().description()
+                    ))
+                    .style(theme.muted_style()),
+                );
+            }
+            lines.push(
+                Line::from("Space Show/hide   Alt+↑/↓ Order   +/- Size   o Options   Esc Done")
+                    .style(theme.muted_style()),
+            );
+        }
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+        for (area, text, alignment, style) in controls {
+            frame.render_widget(Paragraph::new(text).alignment(alignment).style(style), area);
+        }
     }
 
     fn render_view_dialog(&self, frame: &mut Frame<'_>, area: Rect) -> bool {
@@ -1974,7 +2899,7 @@ struct ShellRects {
 }
 
 /// Starts the workspace event loop, managing terminal setup and restoration.
-pub fn run(mut workspace: Workspace) -> io::Result<()> {
+pub fn run(mut workspace: Workspace) -> io::Result<Workspace> {
     require_interactive_terminal()?;
 
     let _mouse_capture = MouseCaptureGuard;
@@ -2018,8 +2943,9 @@ pub fn run(mut workspace: Workspace) -> io::Result<()> {
                 }
             }
         }
-        Ok(())
-    })
+        Ok::<(), io::Error>(())
+    })?;
+    Ok(workspace)
 }
 
 struct MouseCaptureGuard;

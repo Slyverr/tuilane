@@ -6,7 +6,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::Paragraph,
 };
-use tuilane_plugin_api::ViewDescriptor;
+use tuilane_plugin_api::{DashboardLayout, DashboardWidget, DashboardWidgetId, ViewDescriptor};
 
 /// Renders a centered title and a short next-step message for an empty view.
 pub fn render_empty_state(frame: &mut Frame<'_>, area: Rect, title: &str, detail: &str) {
@@ -153,6 +153,22 @@ pub trait View {
 
     /// Renders the view's primary content.
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect);
+
+    /// Returns host-rendered widgets contributed to the Overview dashboard.
+    ///
+    /// The host owns layout, input, and rendering. Implementations should return
+    /// bounded snapshots and use saved preferences when preparing their content.
+    fn dashboard_widgets(&mut self, _layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        Vec::new()
+    }
+
+    /// Marks this view as the host-rendered dashboard entry point.
+    fn is_dashboard(&self) -> bool {
+        false
+    }
+
+    /// Opens a widget's selected item or focused state after dashboard activation.
+    fn open_dashboard_widget(&mut self, _id: &DashboardWidgetId) {}
 
     /// Handles a key event before the shell routes it to global navigation.
     ///

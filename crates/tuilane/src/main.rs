@@ -12,19 +12,13 @@ use std::{
 use chrono::Local;
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
-};
 use tuilane_assistant::AssistantView;
 use tuilane_calendar::CalendarView;
 use tuilane_core::{CommandCallerId, CommandDispatcher, EventBus, ServiceBroker};
 use tuilane_ideas::{IdeasPlugin, IdeasView};
 use tuilane_links::{LinksPlugin, LinksView};
 use tuilane_notes::{NotesPlugin, NotesView};
+use tuilane_plugin_api::CommandPermission;
 use tuilane_plugin_api::ideas::{Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle};
 use tuilane_plugin_api::items::ItemRef;
 use tuilane_plugin_api::links::{ExternalReference, LinkCommand, LinkCommandResult};
@@ -41,13 +35,12 @@ use tuilane_plugin_api::search::{
 use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
-use tuilane_plugin_api::{CommandPermission, ViewDescriptor, ViewId};
 use tuilane_plugin_runtime::PluginManager;
 use tuilane_projects::{ProjectsPlugin, ProjectsView};
 use tuilane_search::{SearchPlugin, SearchView};
 use tuilane_storage::{DatabaseInspection, SqliteDatabase, inspect_database};
 use tuilane_tasks::{TasksPlugin, TasksView};
-use tuilane_ui::{View, Workspace, icons, require_interactive_terminal};
+use tuilane_ui::{DashboardView, Workspace, require_interactive_terminal};
 
 mod config;
 mod external_plugins;
@@ -541,10 +534,19 @@ fn run_doctor() -> Result<(), Box<dyn Error>> {
 fn run_workspace() -> Result<(), Box<dyn Error>> {
     require_interactive_terminal()?;
     let config = config::load_application_config()?;
+    let config::ApplicationConfig {
+        workspace: workspace_config,
+        assistant,
+        path: config_path,
+        original_dashboard,
+    } = config;
     let runtime = Runtime::open()?;
-    let mut workspace = Workspace::with_config(config.workspace);
-    workspace.register_view(OverviewView::new())?;
-    workspace.register_view(TasksView::new(runtime.commands.clone()))?;
+    let mut workspace = Workspace::with_config(workspace_config);
+    workspace.register_view(DashboardView::new())?;
+    workspace.register_view(TasksView::with_events(
+        runtime.commands.clone(),
+        &runtime.events,
+    ))?;
     workspace.register_view(CalendarView::new(
         Local::now().date_naive(),
         runtime.services.clone(),
@@ -574,7 +576,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
             Err(error) => eprintln!("tuilane: plugin '{plugin_id}' has an invalid view: {error}"),
         }
     }
-    if let Some(assistant_config) = config.assistant {
+    if let Some(assistant_config) = assistant {
         let caller = CommandCallerId::new("assistant.local")?;
         {
             let mut commands = runtime.commands.borrow_mut();
@@ -587,7 +589,12 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
             caller,
         ))?;
     }
-    tuilane_ui::run(workspace)?;
+    let workspace = tuilane_ui::run(workspace)?;
+    config::save_dashboard_layout(
+        &config_path,
+        &original_dashboard,
+        workspace.config().dashboard_layout(),
+    )?;
     Ok(())
 }
 
@@ -1089,222 +1096,4 @@ fn application_data_dir() -> Result<PathBuf, Box<dyn Error>> {
     let directories = ProjectDirs::from("org", "tuilane", "tuilane")
         .ok_or_else(|| io::Error::other("could not determine the application data directory"))?;
     Ok(directories.data_dir().to_owned())
-}
-
-struct OverviewView {
-    descriptor: ViewDescriptor,
-}
-
-impl OverviewView {
-    fn new() -> Self {
-        Self {
-            descriptor: ViewDescriptor::new(
-                ViewId::new("overview").expect("static view identifier is valid"),
-                "Overview",
-                "A quick map of your local workspace",
-            ),
-        }
-    }
-}
-
-impl View for OverviewView {
-    fn descriptor(&self) -> &ViewDescriptor {
-        &self.descriptor
-    }
-
-    fn icon(&self) -> &'static str {
-        icons::OVERVIEW
-    }
-
-    fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        if area.width < 56 || area.height < 14 {
-            let lines = Text::from(vec![
-                Line::from(Span::styled(
-                    "Core systems",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(format!(
-                    "{} Commands · {} Storage",
-                    icons::COMMANDS,
-                    icons::STORAGE
-                )),
-                Line::from(format!(
-                    "{} Services · {} Events",
-                    icons::SERVICES,
-                    icons::EVENTS
-                )),
-                Line::from(format!(
-                    "{} Views · {} Permissions",
-                    icons::VIEWS,
-                    icons::PERMISSIONS
-                )),
-                Line::from("Shift+H/L switches views · Alt+Tab opens picker"),
-                Line::from("j/k moves within lists"),
-                Line::from("? for help"),
-            ]);
-            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
-            return;
-        }
-
-        let [welcome_area, feature_area] =
-            Layout::vertical([Constraint::Length(5), Constraint::Min(1)]).areas(area);
-        let welcome = Paragraph::new(Text::from(vec![
-            Line::from(Span::styled(
-                "A local workspace built on clear foundations",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from("The CLI and TUI share validated commands and local storage."),
-            Line::from("Host services, events, and views connect the workspace."),
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .wrap(Wrap { trim: true });
-        frame.render_widget(welcome, welcome_area);
-
-        let features = [
-            (
-                icons::COMMANDS,
-                "Commands",
-                "CLI and TUI share validated operations",
-                Color::LightCyan,
-            ),
-            (
-                icons::STORAGE,
-                "Storage",
-                "Local SQLite and versioned migrations",
-                Color::LightBlue,
-            ),
-            (
-                icons::SERVICES,
-                "Services",
-                "Typed access brokered by the host",
-                Color::LightGreen,
-            ),
-            (
-                icons::EVENTS,
-                "Events",
-                "Committed changes notify subscribers",
-                Color::Yellow,
-            ),
-            (
-                icons::VIEWS,
-                "Views",
-                "The host owns layout, focus, and navigation",
-                Color::LightMagenta,
-            ),
-            (
-                icons::PERMISSIONS,
-                "Permissions",
-                "External capabilities need explicit grants",
-                Color::LightCyan,
-            ),
-        ];
-        let columns = if feature_area.width >= 84 { 3 } else { 2 };
-        let rows = features.len().div_ceil(columns);
-        let row_constraints = vec![Constraint::Ratio(1, rows as u32); rows];
-        let row_areas = Layout::vertical(row_constraints).split(feature_area);
-        for (row_index, row_area) in row_areas.iter().enumerate() {
-            let first = row_index * columns;
-            let count = (features.len() - first).min(columns);
-            let column_constraints = vec![Constraint::Ratio(1, count as u32); count];
-            let column_areas = Layout::horizontal(column_constraints).split(*row_area);
-            for (feature, card_area) in features
-                .iter()
-                .skip(first)
-                .take(count)
-                .zip(column_areas.iter())
-            {
-                render_feature_card(frame, *card_area, *feature);
-            }
-        }
-    }
-
-    fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
-        frame.render_widget(
-            Paragraph::new(Text::from(vec![
-                Line::from("Shift+H/L switches views immediately; Alt+Tab opens the view picker."),
-                Line::from("Use j/k or ↑/↓ to move within lists."),
-                Line::from("Open actions with Ctrl-P."),
-                Line::from("Press ? for all shortcuts."),
-            ]))
-            .wrap(Wrap { trim: true }),
-            area,
-        );
-        true
-    }
-}
-
-fn render_feature_card(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    (icon, title, description, color): (&str, &str, &str, Color),
-) {
-    let mut title = Line::from(vec![
-        Span::styled(
-            icon,
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
-    ]);
-    title.spans.insert(0, Span::raw(" "));
-    title.spans.push(Span::raw(" "));
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(color))
-        .title(title);
-    frame.render_widget(
-        Paragraph::new(description)
-            .block(block)
-            .wrap(Wrap { trim: true }),
-        area,
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use ratatui::{Terminal, backend::TestBackend};
-
-    use super::OverviewView;
-    use tuilane_ui::{View, icons};
-
-    #[test]
-    fn overview_renders_feature_icons_and_navigation_guidance_at_common_widths() {
-        for (width, height) in [(120, 36), (58, 22), (38, 6)] {
-            let mut view = OverviewView::new();
-            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-            terminal
-                .draw(|frame| {
-                    let area = frame.area();
-                    view.render(frame, area);
-                })
-                .unwrap();
-
-            let text = terminal
-                .backend()
-                .buffer()
-                .content()
-                .iter()
-                .map(|cell| cell.symbol())
-                .collect::<String>();
-            assert!(text.contains("Core systems") || text.contains("clear foundations"));
-            assert!(text.contains(&format!("{} Commands", icons::COMMANDS)));
-            assert!(text.contains(&format!("{} Storage", icons::STORAGE)));
-            if width >= 56 && height >= 14 {
-                assert!(text.contains(&format!("╭ {} Commands ", icons::COMMANDS)));
-                assert!(text.contains("Committed"));
-                assert!(text.contains("subscribers"));
-            } else {
-                assert!(text.contains(&format!("{} Services", icons::SERVICES)));
-            }
-        }
-    }
 }

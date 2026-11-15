@@ -10,7 +10,8 @@ use ratatui::{
 use serde::Deserialize;
 use tuilane_core::{CommandCallerId, CommandDispatcher};
 use tuilane_plugin_api::{
-    CommandPermission, ViewDescriptor, ViewId,
+    CommandPermission, DashboardLayout, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetPreference, ViewDescriptor, ViewId,
     plugin::{
         PLUGIN_API_VERSION, PluginId, PluginViewModel, WORKSPACE_INFO_CAPABILITY,
         WORKSPACE_SEARCH_CAPABILITY,
@@ -20,7 +21,7 @@ use tuilane_plugin_api::{
 use tuilane_plugin_runtime::{
     HostServiceDispatcher, HostServiceError, PluginManager, PluginPaths, RuntimeView,
 };
-use tuilane_ui::{View, ViewAction};
+use tuilane_ui::{DashboardWidgetId, View, ViewAction};
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum PluginCliCommand {
@@ -158,6 +159,7 @@ pub(crate) struct ExternalPluginView {
     plugin_id: PluginId,
     view_id: String,
     descriptor: ViewDescriptor,
+    dashboard_widgets: Vec<tuilane_plugin_api::plugin::PluginDashboardWidget>,
     model: Option<PluginViewModel>,
     failure: Option<String>,
 }
@@ -178,6 +180,7 @@ impl ExternalPluginView {
             plugin_id: contribution.plugin_id,
             view_id: view.id,
             descriptor,
+            dashboard_widgets: contribution.dashboard_widgets,
             model: None,
             failure: None,
         })
@@ -271,6 +274,62 @@ impl View for ExternalPluginView {
         );
     }
 
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        if self.dashboard_widgets.is_empty() {
+            return Vec::new();
+        }
+
+        let preferences = DashboardLayout::new(
+            self.dashboard_widgets
+                .iter()
+                .map(|widget| {
+                    let saved = layout.preference(&widget.id);
+                    let mut preference = DashboardWidgetPreference::new(
+                        widget.id.clone(),
+                        saved.map_or(widget.default_size, DashboardWidgetPreference::size),
+                    );
+                    preference.set_visible(saved.is_none_or(DashboardWidgetPreference::visible));
+                    for option in &widget.options {
+                        let value = saved
+                            .and_then(|saved| saved.option(option.id()))
+                            .filter(|value| option.accepts(value))
+                            .cloned()
+                            .unwrap_or_else(|| option.default_value());
+                        preference.set_option(option.id(), value);
+                    }
+                    preference
+                })
+                .collect(),
+        );
+        let result = serde_json::to_string(&preferences)
+            .map_err(|error| error.to_string())
+            .and_then(|request| {
+                self.manager
+                    .try_borrow_mut()
+                    .map_err(|_| "plugin manager is busy".to_owned())?
+                    .dashboard_widgets(self.plugin_id.as_str(), &self.view_id, &request)
+                    .map_err(|error| error.to_string())
+            });
+
+        result.unwrap_or_else(|error| {
+            self.dashboard_widgets
+                .iter()
+                .map(|widget| {
+                    DashboardWidget::new(
+                        widget.descriptor(),
+                        DashboardWidgetContent::Message {
+                            title: "Plugin widget unavailable".into(),
+                            detail: error.to_owned().into_boxed_str(),
+                            tone: DashboardTone::Warning,
+                        },
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn open_dashboard_widget(&mut self, _id: &DashboardWidgetId) {}
+
     fn command_palette_actions(&self) -> Vec<ViewAction> {
         self.model
             .as_ref()
@@ -334,6 +393,13 @@ mod tests {
             .expect("sample plugin provides a view");
         let mut view = ExternalPluginView::new(contribution, plugin_manager.clone())
             .expect("create host view adapter");
+        let widgets = view.dashboard_widgets(&DashboardLayout::default());
+        assert_eq!(widgets.len(), 1);
+        assert_eq!(widgets[0].descriptor().title(), "Workspace status");
+        assert!(matches!(
+            widgets[0].content(),
+            DashboardWidgetContent::Metric { value, .. } if value.as_ref() == "Ready"
+        ));
 
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("create test terminal");
         terminal

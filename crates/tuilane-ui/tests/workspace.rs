@@ -2,7 +2,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::{
     Terminal, backend::TestBackend, layout::Rect, style::Color, text::Line, widgets::Paragraph,
 };
-use tuilane_plugin_api::{ViewDescriptor, ViewId};
+use tuilane_plugin_api::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardSize,
+    DashboardWidget, DashboardWidgetContent, DashboardWidgetDescriptor, DashboardWidgetId,
+    ViewDescriptor, ViewId,
+};
 use tuilane_ui::{
     FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, ViewDialog,
     Workspace, WorkspaceConfig, WorkspaceError, icons, render_empty_state,
@@ -194,6 +198,80 @@ struct ActionView {
     activations: std::rc::Rc<std::cell::Cell<usize>>,
 }
 
+struct DashboardShellView {
+    descriptor: ViewDescriptor,
+}
+
+struct DashboardWidgetView {
+    descriptor: ViewDescriptor,
+    opened: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl DashboardShellView {
+    fn new() -> Self {
+        Self {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("overview").unwrap(),
+                "Overview",
+                "Workspace dashboard",
+            ),
+        }
+    }
+}
+
+impl View for DashboardShellView {
+    fn descriptor(&self) -> &ViewDescriptor {
+        &self.descriptor
+    }
+
+    fn render(&mut self, _frame: &mut ratatui::Frame<'_>, _area: Rect) {}
+
+    fn is_dashboard(&self) -> bool {
+        true
+    }
+}
+
+impl View for DashboardWidgetView {
+    fn descriptor(&self) -> &ViewDescriptor {
+        &self.descriptor
+    }
+
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        frame.render_widget(Paragraph::new("widget owner view"), area);
+    }
+
+    fn dashboard_widgets(&mut self, _layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        let id = DashboardWidgetId::new("org.example.activity.queue").unwrap();
+        vec![DashboardWidget::new(
+            DashboardWidgetDescriptor::new(
+                id,
+                "Build queue",
+                "Recent work waiting to be built",
+                DashboardSize::Compact,
+                vec![DashboardOption::new(
+                    "limit",
+                    "Visible items",
+                    DashboardOptionKind::Number {
+                        default: 3,
+                        min: 1,
+                        max: 8,
+                    },
+                )],
+            ),
+            DashboardWidgetContent::List {
+                items: vec![DashboardItem::new("Ship release", None)],
+                empty_message: "Nothing queued".into(),
+            },
+        )]
+    }
+
+    fn open_dashboard_widget(&mut self, id: &DashboardWidgetId) {
+        if id.as_str() == "org.example.activity.queue" {
+            self.opened.set(true);
+        }
+    }
+}
+
 impl View for ActionView {
     fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
@@ -234,6 +312,134 @@ fn registered_views_navigate_and_can_be_removed() {
     assert!(removed.is_some());
     assert_eq!(workspace.view_count(), 1);
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+}
+
+#[test]
+fn overview_renders_plugin_widgets_and_opens_their_owner() {
+    let opened = std::rc::Rc::new(std::cell::Cell::new(false));
+    let mut workspace = Workspace::new();
+    workspace.register_view(DashboardShellView::new()).unwrap();
+    workspace
+        .register_view(DashboardWidgetView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("activity").unwrap(),
+                "Activity",
+                "Recent activity",
+            ),
+            opened: opened.clone(),
+        })
+        .unwrap();
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 32)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let screen = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(screen.contains("Build queue"));
+    assert!(screen.contains("Ship release"));
+
+    workspace.handle_key(key(KeyCode::Enter));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    assert!(opened.get());
+}
+
+#[test]
+fn overview_editor_persists_widget_size_visibility_and_options() {
+    let mut workspace = Workspace::new();
+    workspace.register_view(DashboardShellView::new()).unwrap();
+    workspace
+        .register_view(DashboardWidgetView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("activity").unwrap(),
+                "Activity",
+                "Recent activity",
+            ),
+            opened: std::rc::Rc::new(std::cell::Cell::new(false)),
+        })
+        .unwrap();
+
+    workspace.handle_key(key(KeyCode::Char('e')));
+    workspace.handle_key(key(KeyCode::Char('+')));
+    workspace.handle_key(key(KeyCode::Char('o')));
+    workspace.handle_key(key(KeyCode::Right));
+    workspace.handle_key(key(KeyCode::Esc));
+    workspace.handle_key(key(KeyCode::Char(' ')));
+
+    let id = DashboardWidgetId::new("org.example.activity.queue").unwrap();
+    let preference = workspace
+        .config()
+        .dashboard_layout()
+        .preference(&id)
+        .unwrap();
+    assert_eq!(preference.size(), DashboardSize::Wide);
+    assert_eq!(
+        preference.option("limit"),
+        Some(&tuilane_plugin_api::DashboardOptionValue::Number(4))
+    );
+    assert!(!preference.visible());
+}
+
+#[test]
+fn overview_editor_supports_mouse_visibility_size_and_option_controls() {
+    let mut workspace = Workspace::new();
+    workspace.register_view(DashboardShellView::new()).unwrap();
+    workspace
+        .register_view(DashboardWidgetView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("activity").unwrap(),
+                "Activity",
+                "Recent activity",
+            ),
+            opened: std::rc::Rc::new(std::cell::Cell::new(false)),
+        })
+        .unwrap();
+    workspace.handle_key(key(KeyCode::Char('e')));
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 32)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let row = (0..32)
+        .find(|row| {
+            let line = (0..120)
+                .map(|column| terminal.backend().buffer()[(column, *row)].symbol())
+                .collect::<String>();
+            line.contains("Build queue") && line.contains("[Options]")
+        })
+        .unwrap();
+
+    workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 24, row));
+    workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 90, row));
+    workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 78, row));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let option_row = (0..32)
+        .find(|row| {
+            (0..120)
+                .map(|column| terminal.backend().buffer()[(column, *row)].symbol())
+                .collect::<String>()
+                .contains("Visible items")
+        })
+        .unwrap();
+    workspace.handle_mouse(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        96,
+        option_row,
+    ));
+
+    let id = DashboardWidgetId::new("org.example.activity.queue").unwrap();
+    let preference = workspace
+        .config()
+        .dashboard_layout()
+        .preference(&id)
+        .unwrap();
+    assert!(!preference.visible());
+    assert_eq!(preference.size(), DashboardSize::Wide);
+    assert_eq!(
+        preference.option("limit"),
+        Some(&tuilane_plugin_api::DashboardOptionValue::Number(4))
+    );
 }
 
 #[test]
