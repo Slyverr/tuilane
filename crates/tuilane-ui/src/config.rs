@@ -46,6 +46,30 @@ impl ThemePreset {
         }
     }
 
+    /// Returns the color style for successful or completed states.
+    pub fn positive_style(self) -> Style {
+        match self {
+            Self::Default => Style::default().fg(Color::Green),
+            Self::HighContrast => Style::default().fg(Color::LightGreen),
+        }
+    }
+
+    /// Returns the color style for states that need attention.
+    pub fn warning_style(self) -> Style {
+        match self {
+            Self::Default => Style::default().fg(Color::Yellow),
+            Self::HighContrast => Style::default().fg(Color::LightYellow),
+        }
+    }
+
+    /// Returns the color style for failed or critical states.
+    pub fn critical_style(self) -> Style {
+        match self {
+            Self::Default => Style::default().fg(Color::Red),
+            Self::HighContrast => Style::default().fg(Color::LightRed),
+        }
+    }
+
     /// Returns the foreground style for a focused or inactive panel.
     pub fn panel_style(self, focused: bool) -> Style {
         match self {

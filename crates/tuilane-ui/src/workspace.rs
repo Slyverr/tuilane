@@ -273,9 +273,9 @@ fn dashboard_tone_style(tone: DashboardTone, theme: ThemePreset) -> Style {
         DashboardTone::Default => Style::default(),
         DashboardTone::Muted => theme.muted_style(),
         DashboardTone::Accent => theme.accent_style(),
-        DashboardTone::Positive => Style::default().fg(Color::Green),
-        DashboardTone::Warning => Style::default().fg(Color::Yellow),
-        DashboardTone::Critical => Style::default().fg(Color::Red),
+        DashboardTone::Positive => theme.positive_style(),
+        DashboardTone::Warning => theme.warning_style(),
+        DashboardTone::Critical => theme.critical_style(),
     }
 }
 

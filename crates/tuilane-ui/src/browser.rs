@@ -4,7 +4,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap},
 };
@@ -332,9 +332,9 @@ fn browser_tone_style(theme: ThemePreset, tone: BrowserTone) -> Style {
     match tone {
         BrowserTone::Default => Style::default(),
         BrowserTone::Accent => theme.accent_style(),
-        BrowserTone::Positive => Style::default().fg(Color::Green),
-        BrowserTone::Warning => Style::default().fg(Color::Yellow),
-        BrowserTone::Critical => Style::default().fg(Color::Red),
+        BrowserTone::Positive => theme.positive_style(),
+        BrowserTone::Warning => theme.warning_style(),
+        BrowserTone::Critical => theme.critical_style(),
     }
 }
 
@@ -348,6 +348,7 @@ fn safe_text(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyModifiers, MouseEvent};
+    use ratatui::style::Color;
     use ratatui::{Terminal, backend::TestBackend};
 
     use super::*;
@@ -500,5 +501,21 @@ mod tests {
             .unwrap();
 
         assert!(screen(&terminal).contains("Resize"));
+    }
+
+    #[test]
+    fn high_contrast_theme_uses_brighter_semantic_status_colors() {
+        assert_eq!(
+            browser_tone_style(ThemePreset::HighContrast, BrowserTone::Positive).fg,
+            Some(Color::LightGreen)
+        );
+        assert_eq!(
+            browser_tone_style(ThemePreset::HighContrast, BrowserTone::Warning).fg,
+            Some(Color::LightYellow)
+        );
+        assert_eq!(
+            browser_tone_style(ThemePreset::HighContrast, BrowserTone::Critical).fg,
+            Some(Color::LightRed)
+        );
     }
 }
