@@ -12,7 +12,9 @@ use tuilane_plugin_api::links::{
     ExternalReference, LinkCommand, LinkCommandResult, LinksChangedV1,
 };
 use tuilane_plugin_api::{
-    ViewDescriptor, ViewId,
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, ViewDescriptor, ViewId,
     items::{ItemRef, ItemSummary},
 };
 use tuilane_ui::{FocusArea, Keybinding, View, ViewDialog, render_empty_state};
@@ -30,6 +32,18 @@ enum InputMode {
     Reference(String),
 }
 
+fn short_detail(value: &str, limit: usize) -> Box<str> {
+    if value.chars().count() <= limit {
+        return value.into();
+    }
+    value
+        .chars()
+        .take(limit.saturating_sub(1))
+        .chain(std::iter::once('…'))
+        .collect::<String>()
+        .into_boxed_str()
+}
+
 /// Links view for following local relations and viewing external references.
 pub struct LinksView {
     descriptor: ViewDescriptor,
@@ -41,6 +55,7 @@ pub struct LinksView {
     selected: Option<usize>,
     input_mode: Option<InputMode>,
     status: Option<String>,
+    load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
 }
@@ -71,6 +86,7 @@ impl LinksView {
             selected: None,
             input_mode: None,
             status: None,
+            load_error: None,
             dirty,
             _event_subscription: event_subscription,
         }
@@ -83,6 +99,7 @@ impl LinksView {
         let Some(item) = self.item.clone() else {
             self.items.clear();
             self.references.clear();
+            self.load_error = None;
             return;
         };
         let command = match self.direction {
@@ -97,18 +114,25 @@ impl LinksView {
             .and_then(|mut commands| commands.execute(command).map_err(|error| error.to_string()));
         match result {
             Ok(LinkCommandResult::Items(items)) => {
+                self.load_error = None;
                 self.items = items;
                 self.references.clear();
                 self.clamp_selection();
             }
             Ok(LinkCommandResult::References(references)) => {
+                self.load_error = None;
                 self.references = references;
                 self.items.clear();
                 self.clamp_selection();
             }
-            Ok(_) => self.status = Some("Link query returned an unexpected response.".to_owned()),
+            Ok(_) => {
+                let error = "Link query returned an unexpected response.".to_owned();
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
+            }
             Err(error) => {
-                self.status = Some(error);
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
             }
         }
     }
@@ -391,6 +415,90 @@ impl View for LinksView {
             );
         } else {
             frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+        }
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh();
+        let id = DashboardWidgetId::new("tuilane.links.context")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Item connections",
+            "Links, backlinks, or references for the current source item",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible connections",
+                DashboardOptionKind::Number {
+                    default: 4,
+                    min: 1,
+                    max: 8,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 8))),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let content = if let Some(error) = &self.load_error {
+            DashboardWidgetContent::Message {
+                title: "Connections unavailable".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Warning,
+            }
+        } else if self.item.is_none() {
+            DashboardWidgetContent::Message {
+                title: "Choose a source item".into(),
+                detail: "Open Links and press s to start browsing connections.".into(),
+                tone: DashboardTone::Muted,
+            }
+        } else {
+            match self.direction {
+                Direction::Outgoing | Direction::Backlinks => DashboardWidgetContent::List {
+                    items: self
+                        .items
+                        .iter()
+                        .take(limit)
+                        .map(|item| {
+                            DashboardItem::new(
+                                item.title(),
+                                Some(short_detail(&item.reference().to_string(), 80)),
+                            )
+                        })
+                        .collect(),
+                    empty_message: if matches!(self.direction, Direction::Outgoing) {
+                        "No linked items".into()
+                    } else {
+                        "No backlinks".into()
+                    },
+                },
+                Direction::References => DashboardWidgetContent::List {
+                    items: self
+                        .references
+                        .iter()
+                        .take(limit)
+                        .map(|reference| {
+                            DashboardItem::new(
+                                reference.kind().as_str(),
+                                Some(short_detail(reference.value(), 80)),
+                            )
+                        })
+                        .collect(),
+                    empty_message: "No external references".into(),
+                },
+            }
+        };
+        vec![DashboardWidget::new(descriptor, content)]
+    }
+
+    fn open_dashboard_widget(&mut self, id: &DashboardWidgetId) {
+        if id.as_str() == "tuilane.links.context" {
+            self.dirty.set(true);
         }
     }
 

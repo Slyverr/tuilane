@@ -12,7 +12,12 @@ use tuilane_plugin_api::notes::{
     Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle, NotesChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
+    ViewDialog, render_empty_state,
+};
 
 enum InputMode {
     Title { id: Option<NoteId>, value: String },
@@ -27,6 +32,7 @@ pub struct NotesView {
     selected: Option<usize>,
     input_mode: Option<InputMode>,
     status: Option<String>,
+    load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
 }
@@ -54,6 +60,7 @@ impl NotesView {
             selected: None,
             input_mode: None,
             status: None,
+            load_error: None,
             dirty,
             _event_subscription: event_subscription,
         }
@@ -75,6 +82,7 @@ impl NotesView {
             });
         match result {
             Ok(NoteCommandResult::Notes(notes)) => {
+                self.load_error = None;
                 self.notes = notes;
                 self.selected = match (self.selected, self.notes.is_empty()) {
                     (_, true) => None,
@@ -82,8 +90,13 @@ impl NotesView {
                     (None, false) => Some(0),
                 };
             }
-            Ok(_) => self.status = Some("Note list returned an unexpected response.".to_owned()),
+            Ok(_) => {
+                let error = "Note list returned an unexpected response.".to_owned();
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
+            }
             Err(error) => {
+                self.load_error = Some(error.clone());
                 self.status = Some(error);
             }
         }
@@ -210,6 +223,58 @@ impl View for NotesView {
                 area,
             );
         }
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh();
+        let id = DashboardWidgetId::new("tuilane.notes.recent")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Recent notes",
+            "Notes you have updated recently",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible notes",
+                DashboardOptionKind::Number {
+                    default: 4,
+                    min: 1,
+                    max: 8,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 8))),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let content = self.load_error.as_ref().map_or_else(
+            || DashboardWidgetContent::List {
+                items: self
+                    .notes
+                    .iter()
+                    .take(limit)
+                    .map(|note| {
+                        let updated = note.updated_at().get(..10).unwrap_or(note.updated_at());
+                        DashboardItem::new(
+                            note.title().as_str(),
+                            Some(format!("Updated {updated}").into_boxed_str()),
+                        )
+                    })
+                    .collect(),
+                empty_message: "No notes yet".into(),
+            },
+            |error| DashboardWidgetContent::Message {
+                title: "Notes could not be loaded".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Critical,
+            },
+        );
+        vec![DashboardWidget::new(descriptor, content)]
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {

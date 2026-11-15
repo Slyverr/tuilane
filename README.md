@@ -2,7 +2,7 @@
 
 tuilane is a local-first terminal workspace for organizing tasks, projects, notes, ideas, and personal workflows. It brings a command-line interface and keyboard-driven terminal UI together with local storage, calendar, links, search, and an optional local assistant.
 
-The project is in early development. Core workflows run locally, the assistant is optional, and a beta WebAssembly plugin SDK supports host-mediated commands and text views from independently built components. Remote providers and synchronization remain future work.
+The project is in early development. Core workflows run locally, Overview can be customized with host-rendered widgets from built-in and beta WebAssembly plugins, and the assistant is optional. Remote providers and synchronization remain future work.
 
 ## Get started
 

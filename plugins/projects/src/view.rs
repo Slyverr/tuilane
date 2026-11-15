@@ -12,7 +12,12 @@ use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle, ProjectsChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
+    ViewDialog, render_empty_state,
+};
 
 enum InputMode {
     Title {
@@ -30,6 +35,7 @@ pub struct ProjectsView {
     selected: Option<usize>,
     input_mode: Option<InputMode>,
     status: Option<String>,
+    load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
 }
@@ -57,6 +63,7 @@ impl ProjectsView {
             selected: None,
             input_mode: None,
             status: None,
+            load_error: None,
             dirty,
             _event_subscription: event_subscription,
         }
@@ -78,6 +85,7 @@ impl ProjectsView {
             });
         match result {
             Ok(ProjectCommandResult::Projects(projects)) => {
+                self.load_error = None;
                 self.projects = projects;
                 self.selected = match (self.selected, self.projects.is_empty()) {
                     (_, true) => None,
@@ -85,8 +93,13 @@ impl ProjectsView {
                     (None, false) => Some(0),
                 };
             }
-            Ok(_) => self.status = Some("Project list returned an unexpected response.".to_owned()),
+            Ok(_) => {
+                let error = "Project list returned an unexpected response.".to_owned();
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
+            }
             Err(error) => {
+                self.load_error = Some(error.clone());
                 self.status = Some(error);
             }
         }
@@ -198,6 +211,57 @@ impl View for ProjectsView {
                 area,
             );
         }
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh();
+        let id = DashboardWidgetId::new("tuilane.projects.recent")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Projects",
+            "Your most recently updated projects",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible projects",
+                DashboardOptionKind::Number {
+                    default: 4,
+                    min: 1,
+                    max: 8,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 8))),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let content = self.load_error.as_ref().map_or_else(
+            || DashboardWidgetContent::List {
+                items: self
+                    .projects
+                    .iter()
+                    .take(limit)
+                    .map(|project| {
+                        DashboardItem::new(
+                            project.title().as_str(),
+                            Some(format!("Updated {}", project.updated_at()).into_boxed_str()),
+                        )
+                    })
+                    .collect(),
+                empty_message: "No projects yet".into(),
+            },
+            |error| DashboardWidgetContent::Message {
+                title: "Projects could not be loaded".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Critical,
+            },
+        );
+        vec![DashboardWidget::new(descriptor, content)]
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {

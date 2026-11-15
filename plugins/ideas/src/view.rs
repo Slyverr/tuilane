@@ -12,7 +12,12 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
+    ViewDialog, render_empty_state,
+};
 
 enum InputMode {
     Title { id: Option<IdeaId>, value: String },
@@ -27,6 +32,7 @@ pub struct IdeasView {
     selected: Option<usize>,
     input_mode: Option<InputMode>,
     status: Option<String>,
+    load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
 }
@@ -54,6 +60,7 @@ impl IdeasView {
             selected: None,
             input_mode: None,
             status: None,
+            load_error: None,
             dirty,
             _event_subscription: event_subscription,
         }
@@ -75,6 +82,7 @@ impl IdeasView {
             });
         match result {
             Ok(IdeaCommandResult::Ideas(ideas)) => {
+                self.load_error = None;
                 self.ideas = ideas;
                 self.selected = match (self.selected, self.ideas.is_empty()) {
                     (_, true) => None,
@@ -82,8 +90,13 @@ impl IdeasView {
                     (None, false) => Some(0),
                 };
             }
-            Ok(_) => self.status = Some("Idea list returned an unexpected response.".to_owned()),
+            Ok(_) => {
+                let error = "Idea list returned an unexpected response.".to_owned();
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
+            }
             Err(error) => {
+                self.load_error = Some(error.clone());
                 self.status = Some(error);
             }
         }
@@ -193,6 +206,58 @@ impl View for IdeasView {
         } else {
             frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
         }
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh();
+        let id = DashboardWidgetId::new("tuilane.ideas.recent")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Recent ideas",
+            "Captured ideas, newest first",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible ideas",
+                DashboardOptionKind::Number {
+                    default: 4,
+                    min: 1,
+                    max: 8,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 8))),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let content = self.load_error.as_ref().map_or_else(
+            || DashboardWidgetContent::List {
+                items: self
+                    .ideas
+                    .iter()
+                    .take(limit)
+                    .map(|idea| {
+                        let updated = idea.updated_at().get(..10).unwrap_or(idea.updated_at());
+                        DashboardItem::new(
+                            idea.title().as_str(),
+                            Some(format!("Updated {updated}").into_boxed_str()),
+                        )
+                    })
+                    .collect(),
+                empty_message: "No ideas yet".into(),
+            },
+            |error| DashboardWidgetContent::Message {
+                title: "Ideas could not be loaded".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Critical,
+            },
+        );
+        vec![DashboardWidget::new(descriptor, content)]
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {

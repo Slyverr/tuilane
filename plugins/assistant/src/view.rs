@@ -11,7 +11,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tuilane_core::{CommandCallerId, CommandDispatcher, PreparedCommand};
 use tuilane_plugin_api::{
-    ViewDescriptor, ViewId,
+    DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue, DashboardSize,
+    DashboardTone, DashboardWidget, DashboardWidgetContent, DashboardWidgetDescriptor,
+    DashboardWidgetId, ViewDescriptor, ViewId,
     tasks::{TaskCommand, TaskCommandResult, TaskId, TaskStatus, TaskTitle},
 };
 use tuilane_ui::{FocusArea, Keybinding, View, render_empty_state};
@@ -553,6 +555,44 @@ impl View for AssistantView {
                 .scroll((scroll, 0)),
             area,
         );
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.drain_provider_events();
+        let id = DashboardWidgetId::new("tuilane.assistant.status")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Local assistant",
+            "Current state of the optional local assistant",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "show-model",
+                "Show model name",
+                DashboardOptionKind::Toggle { default: true },
+            )],
+        );
+        let show_model = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("show-model"))
+            .is_none_or(|value| !matches!(value, DashboardOptionValue::Toggle(false)));
+        let (value, tone) = if self.pending_proposal.is_some() {
+            ("Approval needed", DashboardTone::Warning)
+        } else if self.worker.is_active() {
+            ("Working", DashboardTone::Accent)
+        } else {
+            ("Ready", DashboardTone::Positive)
+        };
+        let detail = show_model.then(|| format!("Model: {}", self.config.model()).into_boxed_str());
+        vec![DashboardWidget::new(
+            descriptor,
+            DashboardWidgetContent::Metric {
+                value: value.into(),
+                label: "Assistant status".into(),
+                detail,
+                tone,
+            },
+        )]
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {

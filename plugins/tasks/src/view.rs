@@ -1,4 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -8,12 +11,17 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
-use tuilane_core::CommandDispatcher;
+use tuilane_core::{CommandDispatcher, EventBus, EventSubscription};
 use tuilane_plugin_api::tasks::{
-    Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
+    Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle, TasksChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
+    ViewDialog, render_empty_state,
+};
 
 enum InputMode {
     Title { action: TitleAction, value: String },
@@ -34,12 +42,35 @@ pub struct TasksView {
     selected: Option<usize>,
     input_mode: Option<InputMode>,
     status: Option<String>,
-    dirty: bool,
+    load_error: Option<String>,
+    dirty: Rc<Cell<bool>>,
+    _event_subscription: Option<EventSubscription>,
 }
 
 impl TasksView {
     /// Creates a Tasks view sharing the host's application command path.
     pub fn new(commands: Rc<RefCell<CommandDispatcher>>) -> Self {
+        Self::build(commands, None)
+    }
+
+    /// Creates a Tasks view that refreshes when any host command changes tasks.
+    pub fn with_events(commands: Rc<RefCell<CommandDispatcher>>, events: &EventBus) -> Self {
+        let dirty = Rc::new(Cell::new(true));
+        let event_dirty = Rc::clone(&dirty);
+        let subscription = events.subscribe(move |_: &TasksChangedV1| {
+            event_dirty.set(true);
+        });
+        Self::build(commands, Some((dirty, subscription)))
+    }
+
+    fn build(
+        commands: Rc<RefCell<CommandDispatcher>>,
+        events: Option<(Rc<Cell<bool>>, EventSubscription)>,
+    ) -> Self {
+        let (dirty, event_subscription) = events.map_or_else(
+            || (Rc::new(Cell::new(true)), None),
+            |(dirty, subscription)| (dirty, Some(subscription)),
+        );
         Self {
             descriptor: ViewDescriptor::new(
                 ViewId::new("tasks").expect("static view identifier is valid"),
@@ -51,15 +82,16 @@ impl TasksView {
             selected: None,
             input_mode: None,
             status: None,
-            dirty: true,
+            load_error: None,
+            dirty,
+            _event_subscription: event_subscription,
         }
     }
 
     fn refresh(&mut self) {
-        if !self.dirty {
+        if !self.dirty.replace(false) {
             return;
         }
-        self.dirty = false;
 
         let result = self
             .commands
@@ -74,6 +106,7 @@ impl TasksView {
             });
         match result {
             Ok(TaskCommandResult::Tasks(tasks)) => {
+                self.load_error = None;
                 self.tasks = tasks;
                 self.selected = match (self.selected, self.tasks.is_empty()) {
                     (_, true) => None,
@@ -81,8 +114,15 @@ impl TasksView {
                     (None, false) => Some(0),
                 };
             }
-            Ok(_) => self.status = Some("Task list returned an unexpected response.".to_owned()),
-            Err(error) => self.status = Some(error),
+            Ok(_) => {
+                let error = "Task list returned an unexpected response.".to_owned();
+                self.status = Some(error.clone());
+                self.load_error = Some(error);
+            }
+            Err(error) => {
+                self.load_error = Some(error.clone());
+                self.status = Some(error);
+            }
         }
     }
 
@@ -103,7 +143,7 @@ impl TasksView {
         match result {
             Ok(response) => {
                 self.status = Some(success(&response));
-                self.dirty = true;
+                self.dirty.set(true);
             }
             Err(error) => self.status = Some(error),
         }
@@ -239,6 +279,60 @@ impl View for TasksView {
                 area,
             );
         }
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh();
+        let id = DashboardWidgetId::new("tuilane.tasks.open")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Open tasks",
+            "Tasks waiting for you",
+            DashboardSize::Wide,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible tasks",
+                DashboardOptionKind::Number {
+                    default: 5,
+                    min: 1,
+                    max: 10,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 10))),
+                _ => None,
+            })
+            .unwrap_or(5);
+        let content = self.load_error.as_ref().map_or_else(
+            || DashboardWidgetContent::List {
+                items: self
+                    .tasks
+                    .iter()
+                    .filter(|task| task.status() == tuilane_plugin_api::tasks::TaskStatus::Open)
+                    .take(limit)
+                    .map(|task| {
+                        DashboardItem::new(
+                            task.title().as_str(),
+                            task.due_date()
+                                .map(|date| format!("Due {date}").into_boxed_str()),
+                        )
+                    })
+                    .collect(),
+                empty_message: "No open tasks".into(),
+            },
+            |error| DashboardWidgetContent::Message {
+                title: "Tasks could not be loaded".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Critical,
+            },
+        );
+
+        vec![DashboardWidget::new(descriptor, content)]
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {
@@ -430,7 +524,7 @@ impl View for TasksView {
                 }
                 KeyCode::F(5) => {
                     self.status = None;
-                    self.dirty = true;
+                    self.dirty.set(true);
                     true
                 }
                 KeyCode::Up => {

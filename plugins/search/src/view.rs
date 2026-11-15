@@ -13,7 +13,11 @@ use tuilane_plugin_api::search::{
     ListSavedSearchesCommand, SaveSavedSearchCommand, SavedSearch, SavedSearchName, SearchCommand,
     SearchCommandResult, SearchQuery, SearchResult,
 };
-use tuilane_plugin_api::{ViewDescriptor, ViewId};
+use tuilane_plugin_api::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, ViewDescriptor, ViewId,
+};
 use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
 
 /// Search workspace items through the shared host command path.
@@ -340,6 +344,77 @@ impl View for SearchView {
                 .wrap(ratatui::widgets::Wrap { trim: true }),
             area,
         );
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        let id = DashboardWidgetId::new("tuilane.search.saved-searches")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "Saved searches",
+            "Quick access to reusable workspace queries",
+            DashboardSize::Compact,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible searches",
+                DashboardOptionKind::Number {
+                    default: 4,
+                    min: 1,
+                    max: 8,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 8))),
+                _ => None,
+            })
+            .unwrap_or(4);
+        let content = self
+            .commands
+            .try_borrow_mut()
+            .map_err(|_| "The command dispatcher is busy.".to_owned())
+            .and_then(|mut commands| {
+                commands
+                    .execute(ListSavedSearchesCommand)
+                    .map_err(|error| error.to_string())
+            })
+            .map_or_else(
+                |error| DashboardWidgetContent::Message {
+                    title: "Saved searches unavailable".into(),
+                    detail: error.into_boxed_str(),
+                    tone: DashboardTone::Warning,
+                },
+                |searches: Vec<SavedSearch>| DashboardWidgetContent::List {
+                    items: searches
+                        .iter()
+                        .take(limit)
+                        .map(|search| {
+                            DashboardItem::new(
+                                search.name().as_str(),
+                                Some(
+                                    format!(
+                                        "{} · {}",
+                                        search.kind().unwrap_or("all"),
+                                        search.query().as_str()
+                                    )
+                                    .into_boxed_str(),
+                                ),
+                            )
+                        })
+                        .collect(),
+                    empty_message: "No saved searches".into(),
+                },
+            );
+        vec![DashboardWidget::new(descriptor, content)]
+    }
+
+    fn open_dashboard_widget(&mut self, id: &DashboardWidgetId) {
+        if id.as_str() == "tuilane.search.saved-searches" {
+            self.open_saved_searches();
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {

@@ -15,7 +15,11 @@ use ratatui::{
 use tuilane_core::{EventBus, EventSubscription, ServiceBroker, ServiceBrokerError};
 use tuilane_plugin_api::tasks::{TaskDate, TaskSummary, TasksByDateV1, TasksChangedV1};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View};
+use tuilane_ui::{
+    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
+    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View,
+};
 
 /// Calendar month view with keyboard date selection and an optional Tasks inspector.
 pub struct CalendarView {
@@ -199,6 +203,64 @@ impl View for CalendarView {
             Paragraph::new(self.month_lines()).wrap(Wrap { trim: true }),
             area,
         );
+    }
+
+    fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
+        self.refresh_tasks();
+        let id = DashboardWidgetId::new("tuilane.calendar.selected-day")
+            .expect("static dashboard widget identifier is valid");
+        let descriptor = DashboardWidgetDescriptor::new(
+            id.clone(),
+            "On this day",
+            "Tasks due on the selected calendar date",
+            DashboardSize::Wide,
+            vec![DashboardOption::new(
+                "limit",
+                "Visible tasks",
+                DashboardOptionKind::Number {
+                    default: 5,
+                    min: 1,
+                    max: 10,
+                },
+            )],
+        );
+        let limit = layout
+            .preference(&id)
+            .and_then(|preference| preference.option("limit"))
+            .and_then(|value| match value {
+                DashboardOptionValue::Number(value) => Some(usize::from((*value).clamp(1, 10))),
+                _ => None,
+            })
+            .unwrap_or(5);
+        let content = match self.tasks.as_ref() {
+            Some(Ok(tasks)) => DashboardWidgetContent::List {
+                items: tasks
+                    .iter()
+                    .take(limit)
+                    .map(|task| {
+                        let tone = if task.status().as_str() == "completed" {
+                            DashboardTone::Positive
+                        } else {
+                            DashboardTone::Default
+                        };
+                        DashboardItem::new(task.title().as_str(), None).with_tone(tone)
+                    })
+                    .collect(),
+                empty_message: format!("No tasks due {}", self.selected_date.format("%b %-d"))
+                    .into_boxed_str(),
+            },
+            Some(Err(error)) => DashboardWidgetContent::Message {
+                title: "Calendar data unavailable".into(),
+                detail: error.as_str().into(),
+                tone: DashboardTone::Warning,
+            },
+            None => DashboardWidgetContent::Message {
+                title: "Calendar is loading".into(),
+                detail: "Task data will appear after refresh.".into(),
+                tone: DashboardTone::Muted,
+            },
+        };
+        vec![DashboardWidget::new(descriptor, content)]
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {
