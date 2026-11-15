@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, widgets::Paragraph};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
@@ -48,6 +48,15 @@ fn key(code: KeyCode) -> KeyEvent {
 
 fn control_key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::CONTROL)
+}
+
+fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
 }
 
 fn workspace_with_two_views() -> Workspace {
@@ -149,6 +158,46 @@ fn l_left_and_enter_open_the_selected_navigation_entry() {
     workspace.handle_key(key(KeyCode::Tab));
     workspace.handle_key(key(KeyCode::Enter));
     assert_eq!(workspace.focus(), FocusArea::Content);
+}
+
+#[test]
+fn clicking_a_navigation_entry_opens_its_view() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 5,)));
+
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    assert_eq!(workspace.focus(), FocusArea::Content);
+}
+
+#[test]
+fn scrolling_over_navigation_changes_the_view_selection() {
+    let mut workspace = workspace_with_two_views();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::ScrollDown, 5, 5)));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    assert_eq!(workspace.focus(), FocusArea::Navigation);
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::ScrollUp, 5, 5)));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+}
+
+#[test]
+fn clicking_visible_panels_moves_keyboard_focus() {
+    let mut workspace = workspace_with_two_views();
+    workspace.toggle_inspector();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 45, 5,)));
+    assert_eq!(workspace.focus(), FocusArea::Content);
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 100, 5,)));
+    assert_eq!(workspace.focus(), FocusArea::Inspector);
 }
 
 #[test]

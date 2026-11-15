@@ -1,6 +1,9 @@
 use std::{io, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -63,6 +66,7 @@ pub struct Workspace {
     navigation_collapsed: bool,
     config: WorkspaceConfig,
     last_layout: ShellLayout,
+    last_regions: ShellRects,
 }
 
 enum PaletteAction {
@@ -107,6 +111,7 @@ impl Default for Workspace {
             navigation_collapsed: false,
             config: WorkspaceConfig::default(),
             last_layout: ShellLayout::default(),
+            last_regions: ShellRects::default(),
         }
     }
 }
@@ -308,6 +313,100 @@ impl Workspace {
         }
     }
 
+    /// Routes mouse input to visible workspace panels.
+    ///
+    /// A left click on a view opens it, and scrolling over Views switches views.
+    /// Clicking another visible panel moves keyboard focus to that panel.
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) -> bool {
+        if self.help_open || self.palette_open {
+            return false;
+        }
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => self.focus_at(mouse.column, mouse.row),
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let Some(navigation) = self.last_regions.navigation else {
+                    return false;
+                };
+                if !rect_contains(navigation, mouse.column, mouse.row) {
+                    return false;
+                }
+
+                let previous_selection = self.selected;
+                let previous_focus = self.focus;
+                self.focus = FocusArea::Navigation;
+                if mouse.kind == MouseEventKind::ScrollUp {
+                    self.select_previous();
+                } else {
+                    self.select_next();
+                }
+                previous_selection != self.selected || previous_focus != self.focus
+            }
+            _ => false,
+        }
+    }
+
+    fn focus_at(&mut self, column: u16, row: u16) -> bool {
+        let regions = self.last_regions;
+        if regions
+            .navigation
+            .is_some_and(|area| rect_contains(area, column, row))
+        {
+            let previous_selection = self.selected;
+            let previous_focus = self.focus;
+            if let Some(index) = self.navigation_index_at(row) {
+                self.selected = Some(index);
+                self.focus = FocusArea::Content;
+            } else {
+                self.focus = FocusArea::Navigation;
+            }
+            return previous_selection != self.selected || previous_focus != self.focus;
+        }
+
+        let target = if rect_contains(regions.main, column, row) {
+            Some(FocusArea::Content)
+        } else if regions
+            .inspector
+            .is_some_and(|area| rect_contains(area, column, row))
+        {
+            Some(FocusArea::Inspector)
+        } else if regions
+            .drawer
+            .is_some_and(|area| rect_contains(area, column, row))
+        {
+            Some(FocusArea::Drawer)
+        } else {
+            None
+        };
+
+        if let Some(target) = target {
+            let changed = self.focus != target;
+            self.focus = target;
+            changed
+        } else {
+            false
+        }
+    }
+
+    fn navigation_index_at(&self, row: u16) -> Option<usize> {
+        let navigation = self.last_regions.navigation?;
+        let inner = Self::panel_block("Views", false, self.config.theme()).inner(navigation);
+        let visible_count = (inner.height / NAVIGATION_ENTRY_HEIGHT) as usize;
+        if visible_count == 0 || row < inner.y {
+            return None;
+        }
+
+        let offset = usize::from(row.saturating_sub(inner.y) / NAVIGATION_ENTRY_HEIGHT);
+        if offset >= visible_count {
+            return None;
+        }
+
+        let selected = self.selected.unwrap_or(0);
+        let first = selected.saturating_sub(visible_count.saturating_sub(1));
+        let index = first + offset;
+        (index < self.views.len()).then_some(index)
+    }
+
     /// Draws the responsive workspace shell and its registered contributions.
     pub fn render(&mut self, frame: &mut Frame<'_>) {
         let area = frame.area();
@@ -320,6 +419,7 @@ impl Workspace {
             self.navigation_collapsed,
         );
         self.last_layout = layout.state;
+        self.last_regions = layout;
         self.normalize_focus(layout.state);
 
         if let Some(navigation) = layout.navigation {
@@ -569,6 +669,7 @@ impl Workspace {
             Line::from("l / ← / Enter  Open the selected view"),
             Line::from("Tab  Focus panels     [ / ]  Resize Views     c  Collapse / expand"),
             Line::from("i  Toggle inspector     d  Toggle drawer"),
+            Line::from("Mouse  Click a view; scroll Views; click a pane to focus"),
             Line::from("Ctrl-P  Commands     ?  Close help     q  Quit"),
         ]);
         frame.render_widget(
@@ -924,6 +1025,7 @@ fn truncate_navigation_text(value: &str, max_width: usize) -> String {
     truncated
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 struct ShellRects {
     navigation: Option<Rect>,
     main: Rect,
@@ -936,6 +1038,9 @@ struct ShellRects {
 /// Starts the workspace event loop, managing terminal setup and restoration.
 pub fn run(mut workspace: Workspace) -> io::Result<()> {
     require_interactive_terminal()?;
+
+    let _mouse_capture = MouseCaptureGuard;
+    crossterm::execute!(io::stdout(), EnableMouseCapture)?;
 
     ratatui::run(|terminal| {
         'redraw: loop {
@@ -961,6 +1066,11 @@ pub fn run(mut workspace: Workspace) -> io::Result<()> {
                         }
                         break;
                     }
+                    Event::Mouse(mouse) => {
+                        if workspace.handle_mouse(mouse) {
+                            break;
+                        }
+                    }
                     Event::Resize(_, _) => break,
                     _ => {}
                 }
@@ -968,6 +1078,21 @@ pub fn run(mut workspace: Workspace) -> io::Result<()> {
         }
         Ok(())
     })
+}
+
+struct MouseCaptureGuard;
+
+impl Drop for MouseCaptureGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
+    }
+}
+
+fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
+    column >= rect.x
+        && column < rect.x.saturating_add(rect.width)
+        && row >= rect.y
+        && row < rect.y.saturating_add(rect.height)
 }
 
 /// Fails when standard input or output is not attached to an interactive terminal.

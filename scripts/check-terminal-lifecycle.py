@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check terminal mode restoration after a normal workspace exit."""
+"""Check terminal and mouse mode restoration after a normal workspace exit."""
 
 import errno
 import fcntl
@@ -15,7 +15,9 @@ import time
 from pathlib import Path
 
 
-def wait_for_workspace(master: int, process: subprocess.Popen[bytes], timeout: float) -> None:
+def wait_for_workspace(
+    master: int, process: subprocess.Popen[bytes], timeout: float
+) -> bytearray:
     output = bytearray()
     deadline = time.monotonic() + timeout
 
@@ -35,9 +37,24 @@ def wait_for_workspace(master: int, process: subprocess.Popen[bytes], timeout: f
             raise
 
         if b"Views" in output:
-            return
+            return output
 
     raise TimeoutError("tuilane did not render its workspace in time")
+
+
+def read_pending_output(master: int, output: bytearray) -> None:
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if not ready:
+            return
+
+        try:
+            output.extend(os.read(master, 4096))
+        except OSError as error:
+            if error.errno == errno.EIO:
+                return
+            raise
 
 
 def run_case(binary: Path) -> None:
@@ -68,13 +85,20 @@ def run_case(binary: Path) -> None:
         )
 
         try:
-            wait_for_workspace(master, process, 10.0)
+            output = wait_for_workspace(master, process, 10.0)
             os.write(master, b"q")
 
             process.wait(timeout=10.0)
+            read_pending_output(master, output)
             restored_attributes = termios.tcgetattr(slave)
             if restored_attributes != original_attributes:
                 raise RuntimeError("terminal settings were not restored after tuilane exited")
+            mouse_modes = (b"1000", b"1002", b"1003", b"1015", b"1006")
+            for mode in mouse_modes:
+                if b"\x1b[?" + mode + b"h" not in output:
+                    raise RuntimeError(f"mouse mode {mode.decode()} was not enabled")
+                if b"\x1b[?" + mode + b"l" not in output:
+                    raise RuntimeError(f"mouse mode {mode.decode()} was not disabled")
             if process.returncode != 0:
                 raise RuntimeError(f"normal quit returned status {process.returncode}")
         finally:
@@ -106,7 +130,7 @@ def main() -> int:
         print(f"terminal lifecycle check failed: {error}", file=sys.stderr)
         return 1
 
-    print("terminal settings restored after normal workspace exit")
+    print("terminal settings and mouse capture restored after normal workspace exit")
     return 0
 
 

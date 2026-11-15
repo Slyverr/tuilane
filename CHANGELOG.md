@@ -4,6 +4,10 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ## [Unreleased]
 
+### Added
+
+- Support mouse clicks and scrolling for workspace navigation and panel focus.
+
 ### Changed
 
 - Use two-letter view identifiers in the collapsed sidebar and remove decorative pixel icons.
