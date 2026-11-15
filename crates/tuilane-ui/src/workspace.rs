@@ -61,6 +61,7 @@ pub struct Workspace {
     palette_open: bool,
     switcher_open: bool,
     switcher_selected: usize,
+    switcher_query: String,
     palette_query: String,
     palette_selected: usize,
     should_quit: bool,
@@ -109,6 +110,7 @@ impl Default for Workspace {
             palette_open: false,
             switcher_open: false,
             switcher_selected: 0,
+            switcher_query: String::new(),
             palette_query: String::new(),
             palette_selected: 0,
             should_quit: false,
@@ -181,6 +183,7 @@ impl Workspace {
         self.switcher_selected = self
             .switcher_selected
             .min(self.views.len().saturating_sub(1));
+        self.synchronize_switcher_selection();
 
         Some(removed)
     }
@@ -457,6 +460,7 @@ impl Workspace {
         if self.views.is_empty() {
             return;
         }
+        self.switcher_query.clear();
         self.switcher_selected = self.selected.unwrap_or(0);
         self.switcher_open = true;
         self.move_switcher_selection(!backwards);
@@ -496,30 +500,77 @@ impl Workspace {
 
         match key.code {
             KeyCode::Esc => self.switcher_open = false,
-            KeyCode::Enter | KeyCode::Char('l') => {
-                self.activate_view(self.switcher_selected);
-                self.switcher_open = false;
+            KeyCode::Enter => {
+                if self.switcher_candidates().contains(&self.switcher_selected) {
+                    self.activate_view(self.switcher_selected);
+                    self.switcher_open = false;
+                }
             }
-            KeyCode::Up | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => {
+            KeyCode::Up | KeyCode::Left => {
                 self.move_switcher_selection(false);
             }
-            KeyCode::Down | KeyCode::Right | KeyCode::Char('j') => {
+            KeyCode::Down | KeyCode::Right => {
                 self.move_switcher_selection(true);
+            }
+            KeyCode::Backspace => {
+                self.switcher_query.pop();
+                self.synchronize_switcher_selection();
+            }
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                self.switcher_query.push(character);
+                self.synchronize_switcher_selection();
             }
             _ => {}
         }
     }
 
     fn move_switcher_selection(&mut self, forward: bool) {
-        if self.views.is_empty() {
-            self.switcher_selected = 0;
+        let candidates = self.switcher_candidates();
+        if candidates.is_empty() {
             return;
         }
-        self.switcher_selected = if forward {
-            (self.switcher_selected + 1) % self.views.len()
+        let current = candidates
+            .iter()
+            .position(|index| *index == self.switcher_selected)
+            .unwrap_or(0);
+        let next = if forward {
+            (current + 1) % candidates.len()
         } else {
-            (self.switcher_selected + self.views.len() - 1) % self.views.len()
+            (current + candidates.len() - 1) % candidates.len()
         };
+        self.switcher_selected = candidates[next];
+    }
+
+    fn switcher_candidates(&self) -> Vec<usize> {
+        let query = self.switcher_query.to_lowercase();
+        self.views
+            .iter()
+            .enumerate()
+            .filter(|(_, view)| {
+                query.is_empty()
+                    || view.descriptor().title().to_lowercase().contains(&query)
+                    || view
+                        .descriptor()
+                        .id()
+                        .as_str()
+                        .to_lowercase()
+                        .contains(&query)
+            })
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    fn synchronize_switcher_selection(&mut self) {
+        let candidates = self.switcher_candidates();
+        if !candidates.contains(&self.switcher_selected)
+            && let Some(first) = candidates.first()
+        {
+            self.switcher_selected = *first;
+        }
     }
 
     fn switcher_index_at(&self, column: u16, row: u16) -> Option<usize> {
@@ -531,17 +582,18 @@ impl Workspace {
 
     fn render_tab_switcher(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.last_switcher_items.clear();
-        if area.width < 12 || area.height < 5 || self.views.is_empty() {
+        if area.width < 12 || area.height < 6 || self.views.is_empty() {
             self.last_regions.switcher = Rect::default();
             return;
         }
 
+        let candidates = self.switcher_candidates();
         let width = area.width.saturating_sub(4).min(60);
-        let visible_count = self
-            .views
+        let visible_count = candidates
             .len()
-            .min(usize::from(area.height.saturating_sub(6)).max(1));
-        let height = (visible_count as u16 + 2).min(area.height.saturating_sub(2));
+            .max(1)
+            .min(usize::from(area.height.saturating_sub(5)));
+        let height = (visible_count as u16 + 3).min(area.height.saturating_sub(2));
         let overlay = Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
             y: area.y + area.height.saturating_sub(height) / 2,
@@ -550,42 +602,57 @@ impl Workspace {
         };
         self.last_regions.switcher = overlay;
 
-        let start = self
-            .switcher_selected
-            .saturating_sub(visible_count.saturating_sub(1));
-        let mut lines = Vec::with_capacity(visible_count);
-        for (offset, view) in self
-            .views
-            .iter()
-            .skip(start)
-            .take(visible_count)
-            .enumerate()
-        {
-            let index = start + offset;
-            let selected = index == self.switcher_selected;
-            let marker = if selected { "›" } else { " " };
-            let label = truncate_to_width(
-                &format!(
-                    "{marker}  {}  {}",
-                    view.value().icon(),
-                    view.descriptor().title()
-                ),
-                usize::from(width.saturating_sub(4)),
-            );
-            let item_area = Rect::new(overlay.x + 1, overlay.y + 1 + offset as u16, width - 2, 1);
-            self.last_switcher_items.push((index, item_area));
-            let style = if selected {
-                self.config.theme().navigation_item_style(true)
-            } else {
-                self.config.theme().muted_style()
-            };
-            lines.push(Line::from(label).style(style));
+        let mut lines = vec![Line::from(vec![
+            Span::styled(" / ", self.config.theme().header_style()),
+            Span::raw(truncate_to_width(
+                &self.switcher_query,
+                usize::from(width.saturating_sub(8)),
+            )),
+        ])];
+        if candidates.is_empty() {
+            lines.push(Line::from("   No matching views").style(self.config.theme().muted_style()));
+        } else {
+            let selected_position = candidates
+                .iter()
+                .position(|index| *index == self.switcher_selected)
+                .unwrap_or(0);
+            let start = selected_position.saturating_sub(visible_count.saturating_sub(1));
+            for (offset, index) in candidates
+                .iter()
+                .copied()
+                .skip(start)
+                .take(visible_count)
+                .enumerate()
+            {
+                let Some(view) = self.views.get(index) else {
+                    continue;
+                };
+                let selected = index == self.switcher_selected;
+                let marker = if selected { "›" } else { " " };
+                let label = truncate_to_width(
+                    &format!(
+                        "{marker}  {}  {}",
+                        view.value().icon(),
+                        view.descriptor().title()
+                    ),
+                    usize::from(width.saturating_sub(4)),
+                );
+                let item_area =
+                    Rect::new(overlay.x + 1, overlay.y + 2 + offset as u16, width - 2, 1);
+                self.last_switcher_items.push((index, item_area));
+                let style = if selected {
+                    self.config.theme().navigation_item_style(true)
+                } else {
+                    self.config.theme().muted_style()
+                };
+                lines.push(Line::from(label).style(style));
+            }
         }
 
         frame.render_widget(Clear, overlay);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).block(Self::panel_block(
-                "Switch view  ·  ↑/↓ select  ·  Enter open  ·  Esc close",
+                "Views  ·  type to search",
                 true,
                 self.config.theme(),
             )),
@@ -777,7 +844,7 @@ impl Workspace {
         frame.render_widget(Clear, overlay);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).block(Self::panel_block(
-                "Keyboard shortcuts",
+                "Shortcuts",
                 true,
                 self.config.theme(),
             )),
@@ -876,20 +943,20 @@ impl Workspace {
         let shell_bindings = shell_keybindings();
 
         if view_bindings.is_empty() {
-            let key_width = 16.min(width.saturating_div(3).max(5));
+            let key_width = widest_key_label(&shell_bindings).min(width.saturating_div(3).max(5));
             let mut lines = vec![Line::from(Span::styled("Workspace", theme.header_style()))];
             lines.extend(pack_keybindings(&shell_bindings, width, theme));
             lines.push(Line::from(Span::styled("Mouse", theme.header_style())));
             lines.push(help_binding_line(
                 "Click",
-                "Activate a tab or focus a panel",
+                "Select / focus",
                 key_width,
                 width,
                 theme,
             ));
             lines.push(help_binding_line(
                 "Scroll",
-                "Scroll to switch views; use Alt+Tab for the picker",
+                "Switch view",
                 key_width,
                 width,
                 theme,
@@ -899,10 +966,13 @@ impl Workspace {
 
         if width >= 64 {
             let column_width = width.saturating_sub(3) / 2;
-            let key_width = 16.min(column_width.saturating_div(2).max(5));
+            let key_width = widest_key_label(&view_bindings)
+                .max(widest_key_label(&shell_bindings))
+                .min(column_width.saturating_div(2).max(5));
+            let title_width = Line::from(title.as_str()).width();
             let mut lines = vec![Line::from(vec![
                 Span::styled(title, theme.header_style()),
-                Span::raw(" ".repeat(column_width.saturating_sub(12))),
+                Span::raw(" ".repeat(column_width.saturating_sub(title_width).saturating_add(3))),
                 Span::styled("Workspace", theme.header_style()),
             ])];
             for row in 0..view_bindings.len().max(shell_bindings.len()) {
@@ -917,14 +987,14 @@ impl Workspace {
             lines.push(Line::from(Span::styled("Mouse", theme.header_style())));
             lines.push(help_binding_line(
                 "Click",
-                "Activate a tab or focus a panel",
+                "Select / focus",
                 key_width,
                 width,
                 theme,
             ));
             lines.push(help_binding_line(
                 "Scroll",
-                "Scroll to switch views; use Alt+Tab for the picker",
+                "Switch view",
                 key_width,
                 width,
                 theme,
@@ -932,7 +1002,9 @@ impl Workspace {
             return lines;
         }
 
-        let key_width = 16.min(width.saturating_div(3).max(5));
+        let key_width = widest_key_label(&view_bindings)
+            .max(widest_key_label(&shell_bindings))
+            .min(width.saturating_div(3).max(5));
         let mut lines = vec![Line::from(Span::styled(title, theme.header_style()))];
         lines.extend(view_bindings.iter().map(|binding| {
             help_binding_line(binding.key(), binding.action(), key_width, width, theme)
@@ -944,14 +1016,14 @@ impl Workspace {
         lines.push(Line::from(Span::styled("Mouse", theme.header_style())));
         lines.push(help_binding_line(
             "Click",
-            "Activate a tab or focus a panel",
+            "Select / focus",
             key_width,
             width,
             theme,
         ));
         lines.push(help_binding_line(
             "Scroll",
-            "Scroll to switch views; use Alt+Tab for the picker",
+            "Switch view",
             key_width,
             width,
             theme,
@@ -1146,7 +1218,7 @@ impl Workspace {
         frame.render_widget(
             Paragraph::new(Text::from(lines))
                 .block(Self::panel_block(
-                    "Commands · Enter select · Esc close",
+                    "Commands · Enter · Esc",
                     true,
                     self.config.theme(),
                 ))
@@ -1331,16 +1403,24 @@ fn is_alt_tab_key(key: KeyEvent) -> bool {
 
 fn shell_keybindings() -> Vec<crate::Keybinding> {
     vec![
-        crate::Keybinding::new("Switch tabs", "Shift+H/L").with_priority(70),
-        crate::Keybinding::new("Open tab picker", "Alt+Tab").with_priority(90),
-        crate::Keybinding::new("Move within lists", "j/k or ↑/↓").with_priority(35),
-        crate::Keybinding::new("Focus panels", "Tab").with_priority(30),
-        crate::Keybinding::new("Toggle details", "i").with_priority(20),
-        crate::Keybinding::new("Toggle side panel", "d").with_priority(15),
+        crate::Keybinding::new("Switch", "Shift+H/L").with_priority(70),
+        crate::Keybinding::new("Picker", "Alt+Tab").with_priority(90),
+        crate::Keybinding::new("Lists", "↑/↓, j/k").with_priority(35),
+        crate::Keybinding::new("Focus", "Tab").with_priority(30),
+        crate::Keybinding::new("Details", "i").with_priority(20),
+        crate::Keybinding::new("Side", "d").with_priority(15),
         crate::Keybinding::new("Commands", "Ctrl+P").with_priority(50),
         crate::Keybinding::new("Help", "?").with_priority(u8::MAX),
         crate::Keybinding::new("Quit", "q").with_priority(10),
     ]
+}
+
+fn widest_key_label(bindings: &[crate::Keybinding]) -> usize {
+    bindings
+        .iter()
+        .map(|binding| Line::from(format!("[{}]", binding.key())).width())
+        .max()
+        .unwrap_or(5)
 }
 
 fn footer_item_text(key: &str, action: &str) -> String {

@@ -30,8 +30,8 @@ impl View for TestView {
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
         if focus == FocusArea::Content {
             vec![
-                Keybinding::new("Create item", "c").with_priority(110),
-                Keybinding::new("Rename item", "e").with_priority(10),
+                Keybinding::new("Create", "c").with_priority(110),
+                Keybinding::new("Rename", "e").with_priority(10),
             ]
         } else {
             Vec::new()
@@ -81,6 +81,14 @@ fn workspace_with_two_views() -> Workspace {
         .unwrap();
     workspace
         .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+    workspace
+}
+
+fn workspace_with_three_views() -> Workspace {
+    let mut workspace = workspace_with_two_views();
+    workspace
+        .register_view(TestView::new("calendar", "Calendar"))
         .unwrap();
     workspace
 }
@@ -237,7 +245,7 @@ fn alt_tab_opens_a_selector_that_cycles_and_activates_views() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(popup.contains("Switch view"));
+    assert!(popup.contains("Views"));
     assert!(popup.contains("Overview"));
     assert!(popup.contains("Activity"));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
@@ -266,6 +274,34 @@ fn clicking_a_view_in_the_alt_tab_picker_activates_it() {
 
     assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 15, 12)));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+}
+
+#[test]
+fn tab_picker_filters_views_and_backspace_edits_the_query() {
+    let mut workspace = workspace_with_three_views();
+    workspace.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::ALT));
+    for character in "cal".chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let calendar_row = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 12)].symbol())
+        .collect::<String>();
+    assert!(calendar_row.contains("Calendar"), "row: {calendar_row}");
+
+    workspace.handle_key(key(KeyCode::Char('d')));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let empty_row = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 12)].symbol())
+        .collect::<String>();
+    assert!(empty_row.contains("No matching views"), "row: {empty_row}");
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+
+    workspace.handle_key(key(KeyCode::Backspace));
+    workspace.handle_key(key(KeyCode::Enter));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "calendar");
 }
 
 #[test]
@@ -449,7 +485,7 @@ fn footer_and_help_show_view_owned_shortcuts() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(text.contains("[c] Create item"));
+    assert!(text.contains("[c] Create"));
 
     workspace.handle_key(key(KeyCode::Char('?')));
     terminal.draw(|frame| workspace.render(frame)).unwrap();
@@ -463,7 +499,7 @@ fn footer_and_help_show_view_owned_shortcuts() {
     assert!(help.contains("Overview actions"));
     assert!(help.contains("Workspace"));
     assert!(help.contains("Mouse"));
-    assert!(help.contains("Switch tabs"));
+    assert!(help.contains("Switch"));
     assert!(!help.contains("No view shortcuts"));
 }
 
@@ -475,9 +511,9 @@ fn footer_keeps_one_line_and_prioritizes_view_actions() {
     let footer = (0..40)
         .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
         .collect::<String>();
-    assert!(footer.contains("[c] Create item"), "footer: {footer}");
+    assert!(footer.contains("[c] Create"), "footer: {footer}");
     assert!(footer.contains("Help +"), "footer: {footer}");
-    assert!(!footer.contains("Rename item"), "footer: {footer}");
+    assert!(!footer.contains("[e] Rename"), "footer: {footer}");
 }
 
 #[test]
@@ -581,7 +617,7 @@ fn shell_provides_fallbacks_for_missing_panel_contributions() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(help.contains("Switch tabs"));
+    assert!(help.contains("Switch"));
     assert!(!help.contains("Resize Views"));
 }
 

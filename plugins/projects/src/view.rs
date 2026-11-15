@@ -313,14 +313,14 @@ impl View for ProjectsView {
                 Keybinding::new("Cancel", "Esc"),
             ],
             Some(InputMode::ConfirmDelete(_)) => vec![
-                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Confirm", "y"),
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move selection", "Up/Down or j/k"),
-                Keybinding::new("Create project", "c"),
-                Keybinding::new("Edit project", "e"),
-                Keybinding::new("Delete project", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k"),
+                Keybinding::new("Create", "c"),
+                Keybinding::new("Edit", "e"),
+                Keybinding::new("Delete", "Delete"),
             ],
         }
     }

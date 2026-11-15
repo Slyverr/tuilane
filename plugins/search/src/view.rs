@@ -204,29 +204,29 @@ impl View for SearchView {
 
         if self.saving_name {
             return vec![
-                Keybinding::new("Save search", "Enter"),
+                Keybinding::new("Save", "Enter"),
                 Keybinding::new("Cancel", "Esc"),
             ];
         }
         if self.saved_searches_open {
             return vec![
-                Keybinding::new("Move selection", "Up/Down or j/k"),
-                Keybinding::new("Run saved search", "Enter"),
-                Keybinding::new("Close saved searches", "Esc"),
+                Keybinding::new("Move", "↑/↓, j/k"),
+                Keybinding::new("Run", "Enter"),
+                Keybinding::new("Close", "Esc"),
             ];
         }
         if self.editing {
             return vec![
-                Keybinding::new("Run search", "Enter"),
+                Keybinding::new("Run", "Enter"),
                 Keybinding::new("Cancel", "Esc"),
-                Keybinding::new("Edit query", "Type"),
+                Keybinding::new("Query", "Type"),
             ];
         }
 
         vec![
             Keybinding::new("Search", "/"),
-            Keybinding::new("Move results", "Up/Down or j/k"),
-            Keybinding::new("Change item filter", "f"),
+            Keybinding::new("Results", "↑/↓, j/k"),
+            Keybinding::new("Filter", "f"),
         ]
     }
 

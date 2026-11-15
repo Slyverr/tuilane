@@ -516,20 +516,20 @@ impl View for AssistantView {
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
         if self.pending_proposal.is_some() {
             return vec![
-                Keybinding::new("Approve proposed change", "y"),
-                Keybinding::new("Reject proposed change", "n / Esc"),
+                Keybinding::new("Approve", "y"),
+                Keybinding::new("Reject", "n / Esc"),
             ];
         }
         if self.worker.is_active() {
-            return vec![Keybinding::new("Cancel response", "Esc")];
+            return vec![Keybinding::new("Cancel", "Esc")];
         }
         if focus != FocusArea::Content {
             return Vec::new();
         }
 
         vec![
-            Keybinding::new("Send prompt", "Enter"),
-            Keybinding::new("Clear conversation", "Ctrl+L"),
+            Keybinding::new("Send", "Enter"),
+            Keybinding::new("Clear", "Ctrl+L"),
         ]
     }
 

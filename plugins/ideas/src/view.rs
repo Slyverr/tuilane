@@ -303,14 +303,14 @@ impl View for IdeasView {
                 Keybinding::new("Cancel", "Esc"),
             ],
             Some(InputMode::ConfirmDelete(_)) => vec![
-                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Confirm", "y"),
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move selection", "Up/Down or j/k"),
-                Keybinding::new("Capture idea", "c"),
-                Keybinding::new("Rename idea", "e"),
-                Keybinding::new("Delete idea", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k"),
+                Keybinding::new("Capture", "c"),
+                Keybinding::new("Rename", "e"),
+                Keybinding::new("Delete", "Delete"),
             ],
         }
     }

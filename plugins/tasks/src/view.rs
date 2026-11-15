@@ -447,20 +447,20 @@ impl View for TasksView {
                 Keybinding::new("Cancel", "Esc"),
             ],
             Some(InputMode::DueDate { .. }) => vec![
-                Keybinding::new("Save due date", "Enter"),
+                Keybinding::new("Save date", "Enter"),
                 Keybinding::new("Cancel", "Esc"),
             ],
             Some(InputMode::ConfirmDelete(_)) => vec![
-                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Confirm", "y"),
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move selection", "Up/Down or j/k"),
-                Keybinding::new("Create task", "c"),
-                Keybinding::new("Rename task", "e"),
-                Keybinding::new("Set due date", "u"),
-                Keybinding::new("Toggle completion", "x"),
-                Keybinding::new("Delete task", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k"),
+                Keybinding::new("Create", "c"),
+                Keybinding::new("Rename", "e"),
+                Keybinding::new("Due", "u"),
+                Keybinding::new("Complete", "x"),
+                Keybinding::new("Delete", "Delete"),
             ],
         }
     }

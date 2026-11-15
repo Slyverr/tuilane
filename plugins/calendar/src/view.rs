@@ -188,10 +188,10 @@ impl View for CalendarView {
         }
 
         vec![
-            Keybinding::new("Move day", "Left/Right"),
-            Keybinding::new("Move week", "Up/Down or j/k"),
-            Keybinding::new("Move month", "PageUp/PageDown"),
-            Keybinding::new("Go to today", "t"),
+            Keybinding::new("Day", "←/→"),
+            Keybinding::new("Week", "↑/↓, j/k"),
+            Keybinding::new("Month", "PgUp/PgDn"),
+            Keybinding::new("Today", "t"),
         ]
     }
 

@@ -346,18 +346,18 @@ impl View for LinksView {
             ];
         }
 
-        let mut bindings = vec![Keybinding::new("Move selection", "Up/Down or j/k")];
+        let mut bindings = vec![Keybinding::new("Move", "↑/↓, j/k")];
         if !matches!(self.direction, Direction::References) {
-            bindings.push(Keybinding::new("Open related item", "Enter"));
+            bindings.push(Keybinding::new("Open", "Enter"));
         }
         bindings.extend([
-            Keybinding::new("Select source item", "s"),
-            Keybinding::new("Add item link", "a"),
-            Keybinding::new("Add external reference", "x"),
-            Keybinding::new("Show backlinks", "b"),
-            Keybinding::new("Show outgoing links", "o"),
-            Keybinding::new("Show references", "r"),
-            Keybinding::new("Remove selected relation", "Delete"),
+            Keybinding::new("Source", "s"),
+            Keybinding::new("Link", "a"),
+            Keybinding::new("Reference", "x"),
+            Keybinding::new("Backlinks", "b"),
+            Keybinding::new("Outgoing", "o"),
+            Keybinding::new("References", "r"),
+            Keybinding::new("Remove", "Delete"),
         ]);
         bindings
     }

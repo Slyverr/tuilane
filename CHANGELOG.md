@@ -6,8 +6,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ### Added
 
-- Add an Alt+Tab view picker and immediate tab activation by keyboard and mouse.
-- Show prioritized view shortcuts on a single-line footer and list all bindings in help.
+- Add a searchable Alt+Tab view picker and immediate tab activation by keyboard and mouse.
+- Fit prioritized, compact view shortcuts on one footer line and list all bindings in help.
 
 ### Changed
 
