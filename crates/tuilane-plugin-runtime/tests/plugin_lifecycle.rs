@@ -54,7 +54,7 @@ manifest-version = 1
 id = "org.example.broken"
 name = "Broken Component"
 version = "0.1.0"
-api-version = "0.1.0"
+api-version = "0.2.0"
 component = "plugin.wasm"
 "#,
     )

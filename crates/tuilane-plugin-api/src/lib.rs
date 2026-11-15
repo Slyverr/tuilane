@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt, str::FromStr};
 
+pub mod dashboard;
 pub mod ideas;
 pub mod items;
 pub mod links;
@@ -10,6 +11,12 @@ pub mod plugin;
 pub mod projects;
 pub mod search;
 pub mod tasks;
+
+pub use dashboard::{
+    DashboardChoice, DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind,
+    DashboardOptionValue, DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
+    DashboardWidgetDescriptor, DashboardWidgetId, DashboardWidgetPreference,
+};
 
 /// Typed notification published by a host or feature after a completed change.
 pub trait Event: 'static {

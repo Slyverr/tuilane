@@ -2,7 +2,7 @@ manifest-version = 1
 id = "org.example.hello"
 name = "Hello World"
 version = "0.1.0"
-api-version = "0.1.0"
+api-version = "0.2.0"
 component = "plugin.wasm"
 
 [[services]]
@@ -27,3 +27,10 @@ effect = "read-only"
 id = "org.example.hello.main"
 title = "Hello World"
 description = "An independently built example plugin view."
+
+[[dashboard-widgets]]
+view = "org.example.hello.main"
+id = "org.example.hello.status"
+title = "Workspace status"
+description = "Connection and version information."
+default-size = "compact"

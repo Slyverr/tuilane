@@ -9,7 +9,7 @@ impl exports::tuilane::plugin::plugin::Guest for HelloWorld {
     fn metadata() -> exports::tuilane::plugin::plugin::PluginMetadata {
         exports::tuilane::plugin::plugin::PluginMetadata {
             id: "org.example.hello".to_owned(),
-            api_version: "0.1.0".to_owned(),
+            api_version: "0.2.0".to_owned(),
         }
     }
 
@@ -107,6 +107,37 @@ impl exports::tuilane::plugin::plugin::Guest for HelloWorld {
         serde_json::from_str::<serde_json::Value>(&request)
             .map_err(|_| exports::tuilane::plugin::plugin::PluginError::InvalidRequest)?;
         view_model()
+    }
+
+    fn dashboard(
+        view_id: String,
+        preferences: String,
+    ) -> Result<String, exports::tuilane::plugin::plugin::PluginError> {
+        use exports::tuilane::plugin::plugin::PluginError;
+
+        if view_id != "org.example.hello.main" {
+            return Err(PluginError::UnknownView);
+        }
+        serde_json::from_str::<serde_json::Value>(&preferences)
+            .map_err(|_| PluginError::InvalidRequest)?;
+        Ok(serde_json::json!([{
+            "descriptor": {
+                "id": "org.example.hello.status",
+                "title": "Workspace status",
+                "description": "Connection and version information.",
+                "default-size": "compact",
+                "options": []
+            },
+            "content": {
+                "type": "metric",
+                "content": {
+                    "value": "Ready",
+                    "label": "Plugin connected",
+                    "detail": "Rendered by the host from a bounded widget model."
+                }
+            }
+        }])
+        .to_string())
     }
 }
 

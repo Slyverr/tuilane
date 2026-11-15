@@ -1,4 +1,4 @@
-package tuilane:plugin@0.1.0;
+package tuilane:plugin@0.2.0;
 
 interface host {
     enum host-error {
@@ -62,6 +62,7 @@ interface plugin {
     invoke: func(command-id: string, request: string) -> result<string, plugin-error>;
     render: func(view-id: string) -> result<view-model, plugin-error>;
     activate: func(view-id: string, action-id: string, request: string) -> result<view-model, plugin-error>;
+    dashboard: func(view-id: string, preferences: string) -> result<string, plugin-error>;
 }
 
 world plugin-guest {

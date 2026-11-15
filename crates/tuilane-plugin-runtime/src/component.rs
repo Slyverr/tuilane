@@ -8,8 +8,12 @@ use std::{
 };
 
 use thiserror::Error;
-use tuilane_plugin_api::plugin::{
-    PLUGIN_API_VERSION, PluginAction, PluginEffect, PluginId, PluginManifest, PluginViewModel,
+use tuilane_plugin_api::{
+    DashboardWidget, DashboardWidgetContent,
+    plugin::{
+        PLUGIN_API_VERSION, PluginAction, PluginDashboardWidget, PluginEffect, PluginId,
+        PluginManifest, PluginViewModel,
+    },
 };
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
@@ -28,6 +32,9 @@ pub(crate) const MAX_RPC_BYTES: usize = 1024 * 1024;
 const MAX_VIEW_BYTES: usize = 64 * 1024;
 const MAX_VIEW_LINES: usize = 200;
 const MAX_VIEW_ACTIONS: usize = 32;
+const MAX_DASHBOARD_BYTES: usize = 64 * 1024;
+const MAX_DASHBOARD_WIDGETS: usize = 64;
+const MAX_DASHBOARD_ITEMS: usize = 100;
 const MAX_HOST_CALLS_PER_GUEST_CALL: usize = 64;
 const MAX_FUEL_PER_GUEST_CALL: u64 = 10_000_000;
 const MAX_MEMORY_BYTES: usize = 32 * 1024 * 1024;
@@ -92,6 +99,8 @@ pub(crate) enum ComponentError {
     ViewMismatch,
     #[error("plugin returned an invalid view model: {0}")]
     InvalidViewModel(&'static str),
+    #[error("plugin returned an invalid dashboard contribution: {0}")]
+    InvalidDashboard(&'static str),
     #[error("plugin returned an invalid JSON response")]
     InvalidJsonResponse,
     #[error("plugin request must be valid JSON within the configured size limit")]
@@ -213,6 +222,31 @@ impl PluginComponent {
         })?;
         let model = result.map_err(plugin_rejection)?;
         validate_view_model(model)
+    }
+
+    pub(crate) fn dashboard(
+        &mut self,
+        view_id: &str,
+        preferences: &str,
+    ) -> Result<Vec<DashboardWidget>, ComponentError> {
+        validate_json_request(preferences)?;
+        let result =
+            self.with_guest_call(|guest, store| guest.call_dashboard(store, view_id, preferences))?;
+        let response = result.map_err(plugin_rejection)?;
+        if response.len() > MAX_DASHBOARD_BYTES {
+            return Err(ComponentError::InvalidDashboard(
+                "exceeds the response size limit",
+            ));
+        }
+        let widgets = serde_json::from_str::<Vec<DashboardWidget>>(&response)
+            .map_err(|_| ComponentError::InvalidDashboard("is not a valid widget list"))?;
+        let expected = self
+            .manifest
+            .dashboard_widgets
+            .iter()
+            .filter(|widget| widget.view == view_id)
+            .collect::<Vec<_>>();
+        validate_dashboard_widgets(widgets, &expected)
     }
 
     pub(crate) fn invoke(
@@ -456,4 +490,150 @@ fn valid_local_id(value: &str) -> bool {
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })
+}
+
+fn validate_dashboard_widgets(
+    widgets: Vec<DashboardWidget>,
+    expected: &[&PluginDashboardWidget],
+) -> Result<Vec<DashboardWidget>, ComponentError> {
+    if widgets.len() != expected.len() || widgets.len() > MAX_DASHBOARD_WIDGETS {
+        return Err(ComponentError::InvalidDashboard(
+            "does not match its manifest declarations",
+        ));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for widget in &widgets {
+        if !ids.insert(widget.descriptor().id().as_str()) {
+            return Err(ComponentError::InvalidDashboard(
+                "contains duplicate widget IDs",
+            ));
+        }
+        let Some(declaration) = expected
+            .iter()
+            .find(|declaration| declaration.id == *widget.descriptor().id())
+        else {
+            return Err(ComponentError::InvalidDashboard(
+                "contains an undeclared widget",
+            ));
+        };
+        if widget.descriptor() != &declaration.descriptor() {
+            return Err(ComponentError::InvalidDashboard(
+                "changed widget metadata from its manifest declaration",
+            ));
+        }
+        validate_widget_content(widget.content())?;
+    }
+    Ok(widgets)
+}
+
+fn validate_widget_content(content: &DashboardWidgetContent) -> Result<(), ComponentError> {
+    let valid_text = |value: &str, max: usize, allow_empty: bool| {
+        value.len() <= max
+            && (allow_empty || !value.trim().is_empty())
+            && !value.chars().any(char::is_control)
+    };
+    let valid = match content {
+        DashboardWidgetContent::Metric {
+            value,
+            label,
+            detail,
+            ..
+        } => {
+            valid_text(value, 512, false)
+                && valid_text(label, 256, false)
+                && detail
+                    .as_deref()
+                    .is_none_or(|detail| valid_text(detail, 512, true))
+        }
+        DashboardWidgetContent::List {
+            items,
+            empty_message,
+        } => {
+            items.len() <= MAX_DASHBOARD_ITEMS
+                && valid_text(empty_message, 512, false)
+                && items.iter().all(|item| {
+                    valid_text(item.title(), 512, false)
+                        && item
+                            .detail()
+                            .is_none_or(|detail| valid_text(detail, 512, true))
+                })
+        }
+        DashboardWidgetContent::Message { title, detail, .. } => {
+            valid_text(title, 256, false) && valid_text(detail, 2048, true)
+        }
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(ComponentError::InvalidDashboard(
+            "contains unbounded or control-character text",
+        ))
+    }
+}
+
+#[cfg(test)]
+mod dashboard_tests {
+    use tuilane_plugin_api::{
+        DashboardSize, DashboardWidgetContent, DashboardWidgetId, plugin::PluginDashboardWidget,
+    };
+
+    use super::*;
+
+    fn declaration() -> PluginDashboardWidget {
+        PluginDashboardWidget {
+            view: "org.example.hello.main".to_owned(),
+            id: DashboardWidgetId::new("org.example.hello.status").unwrap(),
+            title: "Status".to_owned(),
+            description: "Current service status".to_owned(),
+            default_size: DashboardSize::Compact,
+            options: Vec::new(),
+        }
+    }
+
+    fn widget(content: DashboardWidgetContent) -> DashboardWidget {
+        DashboardWidget::new(declaration().descriptor(), content)
+    }
+
+    #[test]
+    fn accepts_content_for_a_declared_widget() {
+        let declaration = declaration();
+        let widget = DashboardWidget::new(
+            declaration.descriptor(),
+            DashboardWidgetContent::Metric {
+                value: "Ready".into(),
+                label: "Service".into(),
+                detail: None,
+                tone: tuilane_plugin_api::DashboardTone::Positive,
+            },
+        );
+        assert!(validate_dashboard_widgets(vec![widget], &[&declaration]).is_ok());
+    }
+
+    #[test]
+    fn rejects_undeclared_metadata_and_terminal_control_text() {
+        let declaration = declaration();
+        let changed_descriptor = tuilane_plugin_api::DashboardWidgetDescriptor::new(
+            DashboardWidgetId::new("org.example.hello.status").unwrap(),
+            "Unexpected title",
+            "Current service status",
+            DashboardSize::Compact,
+            Vec::new(),
+        );
+        let changed = DashboardWidget::new(
+            changed_descriptor,
+            DashboardWidgetContent::Message {
+                title: "Ready".into(),
+                detail: "Listening".into(),
+                tone: tuilane_plugin_api::DashboardTone::Default,
+            },
+        );
+        assert!(validate_dashboard_widgets(vec![changed], &[&declaration]).is_err());
+
+        let control = widget(DashboardWidgetContent::Message {
+            title: "Ready\u{1b}[31m".into(),
+            detail: "Listening".into(),
+            tone: tuilane_plugin_api::DashboardTone::Default,
+        });
+        assert!(validate_dashboard_widgets(vec![control], &[&declaration]).is_err());
+    }
 }

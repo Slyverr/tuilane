@@ -1,6 +1,7 @@
 use semver::Version;
 use std::path::PathBuf;
 use thiserror::Error;
+use tuilane_plugin_api::DashboardOptionKind;
 use tuilane_plugin_api::plugin::{
     PLUGIN_API_VERSION, PLUGIN_MANIFEST_VERSION, PluginId, PluginManifest,
 };
@@ -12,6 +13,8 @@ const MAX_DESCRIPTION_CHARS: usize = 256;
 const MAX_COMMANDS: usize = 128;
 const MAX_SERVICES: usize = 64;
 const MAX_VIEWS: usize = 64;
+const MAX_DASHBOARD_WIDGETS: usize = 64;
+const MAX_WIDGET_OPTIONS: usize = 32;
 
 /// Manifest validation failure with a stable compatibility classification.
 #[derive(Debug, Error)]
@@ -48,6 +51,12 @@ pub enum ManifestError {
     /// One manifest section exceeds its bound.
     #[error("plugin manifest contains too many {field}; maximum is {max}")]
     TooMany { field: &'static str, max: usize },
+    /// A dashboard setting is malformed or internally inconsistent.
+    #[error("invalid dashboard option '{option}': {reason}")]
+    InvalidDashboardOption {
+        option: String,
+        reason: &'static str,
+    },
     /// The manifest file could not be read safely.
     #[error("could not read manifest {path}: {reason}")]
     Read { path: PathBuf, reason: String },
@@ -89,6 +98,11 @@ pub fn validate_manifest(source: &str) -> Result<PluginManifest, ManifestError> 
     validate_count("services", manifest.services.len(), MAX_SERVICES)?;
     validate_count("commands", manifest.commands.len(), MAX_COMMANDS)?;
     validate_count("views", manifest.views.len(), MAX_VIEWS)?;
+    validate_count(
+        "dashboard widgets",
+        manifest.dashboard_widgets.len(),
+        MAX_DASHBOARD_WIDGETS,
+    )?;
 
     let mut ids = std::collections::HashSet::new();
     for service in &manifest.services {
@@ -124,6 +138,93 @@ pub fn validate_manifest(source: &str) -> Result<PluginManifest, ManifestError> 
                 field: "view",
                 value: view.id.clone(),
             });
+        }
+    }
+
+    let view_ids = manifest
+        .views
+        .iter()
+        .map(|view| view.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    ids.clear();
+    for widget in &manifest.dashboard_widgets {
+        let widget_id = widget.id.as_str();
+        validate_namespaced_id("dashboard widget", widget_id, id.as_str())?;
+        if !view_ids.contains(widget.view.as_str()) {
+            return Err(ManifestError::InvalidIdentifier {
+                field: "dashboard widget view",
+                value: widget.view.clone(),
+            });
+        }
+        validate_text(
+            "dashboard widget title",
+            &widget.title,
+            MAX_PLUGIN_NAME_CHARS,
+        )?;
+        validate_text(
+            "dashboard widget description",
+            &widget.description,
+            MAX_DESCRIPTION_CHARS,
+        )?;
+        if !ids.insert(widget_id) {
+            return Err(ManifestError::DuplicateIdentifier {
+                field: "dashboard widget",
+                value: widget_id.to_owned(),
+            });
+        }
+        validate_count("widget options", widget.options.len(), MAX_WIDGET_OPTIONS)?;
+        let mut option_ids = std::collections::HashSet::new();
+        for option in &widget.options {
+            if !valid_local_identifier(option.id()) || !option_ids.insert(option.id()) {
+                return Err(ManifestError::InvalidDashboardOption {
+                    option: option.id().to_owned(),
+                    reason: "setting IDs must be unique lowercase identifiers",
+                });
+            }
+            validate_text(
+                "dashboard option label",
+                option.label(),
+                MAX_PLUGIN_NAME_CHARS,
+            )?;
+            match option.kind() {
+                DashboardOptionKind::Toggle { .. } => {}
+                DashboardOptionKind::Number { default, min, max }
+                    if min <= max && default >= min && default <= max => {}
+                DashboardOptionKind::Number { .. } => {
+                    return Err(ManifestError::InvalidDashboardOption {
+                        option: option.id().to_owned(),
+                        reason: "numeric defaults must fit within an ordered range",
+                    });
+                }
+                DashboardOptionKind::Choice { default, choices } => {
+                    if choices.is_empty() || choices.len() > MAX_WIDGET_OPTIONS {
+                        return Err(ManifestError::InvalidDashboardOption {
+                            option: option.id().to_owned(),
+                            reason: "choice settings need between 1 and 32 choices",
+                        });
+                    }
+                    let mut values = std::collections::HashSet::new();
+                    for choice in choices {
+                        let value = choice.value();
+                        if value.is_empty()
+                            || value.len() > 128
+                            || value.chars().any(char::is_control)
+                            || !values.insert(value)
+                        {
+                            return Err(ManifestError::InvalidDashboardOption {
+                                option: option.id().to_owned(),
+                                reason: "choice values must be unique printable strings of at most 128 bytes",
+                            });
+                        }
+                    }
+                    if !values.contains(default.as_ref()) {
+                        return Err(ManifestError::InvalidDashboardOption {
+                            option: option.id().to_owned(),
+                            reason: "choice default must match one of its values",
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -212,6 +313,14 @@ fn valid_contract_version(value: &str) -> bool {
     matches!(value.parse::<u16>(), Ok(version) if version > 0)
 }
 
+fn valid_local_identifier(value: &str) -> bool {
+    value.len() <= 64
+        && value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_".contains(&byte))
+}
+
 fn invalid_id(field: &'static str, value: &str) -> ManifestError {
     ManifestError::InvalidIdentifier {
         field,
@@ -228,7 +337,7 @@ manifest-version = 1
 id = "org.example.hello"
 name = "Hello"
 version = "0.1.0"
-api-version = "0.1.0"
+api-version = "0.2.0"
 component = "plugin.wasm"
 
 [[services]]
@@ -244,6 +353,14 @@ effect = "read-only"
 id = "org.example.hello.main"
 title = "Hello"
 description = "Example plugin view."
+
+[[dashboard-widgets]]
+view = "org.example.hello.main"
+id = "org.example.hello.status"
+title = "Workspace status"
+description = "Connection and version information."
+default-size = "compact"
+options = [{ id = "limit", label = "Visible items", kind = { type = "number", default = 4, min = 1, max = 8 } }]
 "#;
 
     #[test]
@@ -253,6 +370,7 @@ description = "Example plugin view."
         assert_eq!(manifest.services.len(), 1);
         assert_eq!(manifest.commands.len(), 1);
         assert_eq!(manifest.views.len(), 1);
+        assert_eq!(manifest.dashboard_widgets.len(), 1);
     }
 
     #[test]
@@ -262,7 +380,7 @@ description = "Example plugin view."
             Err(ManifestError::UnsupportedManifestVersion(2))
         ));
         assert!(matches!(
-            validate_manifest(&VALID.replace("api-version = \"0.1.0\"", "api-version = \"1.0.0\"")),
+            validate_manifest(&VALID.replace("api-version = \"0.2.0\"", "api-version = \"1.0.0\"")),
             Err(ManifestError::IncompatibleApiVersion { .. })
         ));
         assert!(matches!(
@@ -287,5 +405,12 @@ description = "Example plugin view."
             validate_manifest(&VALID.replace("org.example.hello.main", "org.other.plugin.main"))
                 .is_err()
         );
+        assert!(
+            validate_manifest(
+                &VALID.replace("org.example.hello.status", "org.other.plugin.status")
+            )
+            .is_err()
+        );
+        assert!(validate_manifest(&VALID.replace("max = 8", "max = 0")).is_err());
     }
 }

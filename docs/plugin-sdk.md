@@ -2,7 +2,7 @@
 
 The external plugin SDK is an early, versioned WebAssembly component interface. It lets an independently built plugin declare commands and contribute a text-based workspace view, then request supported services through the host. The API is experimental and may change before a future stability commitment.
 
-The current interface is defined in [`crates/tuilane-plugin-api/wit/plugin.wit`](../crates/tuilane-plugin-api/wit/plugin.wit). Components use the `plugin-guest` world and report API version `0.1.0`. A bundle contains exactly the following required files; installation ignores other files in the bundle:
+The current interface is defined in [`crates/tuilane-plugin-api/wit/plugin.wit`](../crates/tuilane-plugin-api/wit/plugin.wit). Components use the `plugin-guest` world and report API version `0.2.0`. A bundle contains exactly the following required files; installation ignores other files in the bundle:
 
 ```text
 hello-world-bundle/
@@ -10,7 +10,7 @@ hello-world-bundle/
 └── plugin.wasm
 ```
 
-The manifest declares a namespaced plugin ID, plugin and API versions, requested host services and permissions, commands, and views. The guest's exported metadata and contributions must match the manifest. Invalid manifests, missing imports, incompatible WIT exports, and unsupported host services are reported as compatibility errors by `tuilane plugin list` or the operation that loads the plugin.
+The manifest declares a namespaced plugin ID, plugin and API versions, requested host services and permissions, commands, views, and optional dashboard widgets. Each widget is owned by one declared view and fixes its title, size, and editable options in the manifest. On render, the guest receives that widget's saved preferences and returns bounded structured content; the host validates the contribution and owns its layout, styling, focus, and navigation. Opening a widget enters its owner view. Invalid manifests, missing imports, incompatible WIT exports, and unsupported host services are reported as compatibility errors by `tuilane plugin list` or the operation that loads the plugin.
 
 ## Build and exercise the sample
 
@@ -46,6 +46,6 @@ The host currently implements two read-only services: `workspace.info@1` and `wo
 
 The guest has no WASI linker, filesystem access, network access, or direct database access. The runtime limits component size to 64 MiB, linear memory to 32 MiB, guest initialization and each guest call to 10 million fuel units, each guest call to a 250 ms epoch deadline, JSON RPC payloads to 1 MiB, and host-service calls to 64 per guest call. A failed or interrupted guest instance is discarded before another call. These controls describe this implementation; they are not a claim that every hostile component or platform has been independently security-audited.
 
-The host renders bounded text and action descriptions returned by the plugin. Plugins do not control the terminal lifecycle, layout, or event loop. Plugin command effects are descriptive metadata; the currently exposed host services are read-only, and there is no general plugin storage, mutation, marketplace, automatic updater, or hot-reload facility.
+The host renders bounded text and action descriptions returned by the plugin, plus bounded dashboard widget models declared in the manifest. Plugins do not control the terminal lifecycle, layout, or event loop. Plugin command effects are descriptive metadata; the currently exposed host services are read-only, and there is no general plugin storage, mutation, marketplace, automatic updater, or hot-reload facility.
 
 The interface is not yet a stable third-party compatibility guarantee. Breaking changes may be made during `0.x` development and must be documented. See [architecture](architecture.md) for crate ownership and [ROADMAP.md](../ROADMAP.md) for the milestone plan.

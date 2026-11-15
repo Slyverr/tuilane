@@ -1,5 +1,6 @@
 //! Versioned contracts used to describe and validate external Tuilane plugins.
 
+use crate::{DashboardOption, DashboardSize, DashboardWidgetDescriptor, DashboardWidgetId};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
 
@@ -7,7 +8,7 @@ use std::{error::Error, fmt};
 pub const PLUGIN_MANIFEST_VERSION: u32 = 1;
 
 /// Version of the WIT interface used by external plugin components.
-pub const PLUGIN_API_VERSION: &str = "0.1.0";
+pub const PLUGIN_API_VERSION: &str = "0.2.0";
 
 /// Host service that returns non-sensitive application and API version metadata.
 pub const WORKSPACE_INFO_CAPABILITY: &str = "workspace.info@1";
@@ -96,6 +97,9 @@ pub struct PluginManifest {
     /// Views contributed by the plugin.
     #[serde(default)]
     pub views: Vec<PluginView>,
+    /// Dashboard widgets contributed by their owning views.
+    #[serde(default)]
+    pub dashboard_widgets: Vec<PluginDashboardWidget>,
 }
 
 /// A requested host capability and its exact user-controlled permission grant.
@@ -142,6 +146,39 @@ pub struct PluginView {
     pub title: String,
     /// Short description shown in the workspace shell.
     pub description: String,
+}
+
+/// Static metadata for one widget a Wasm plugin may render on Overview.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PluginDashboardWidget {
+    /// Owning view that receives activation when the widget is opened.
+    pub view: String,
+    /// Stable globally namespaced widget identity.
+    pub id: DashboardWidgetId,
+    /// Short title shown in the widget border.
+    pub title: String,
+    /// Description shown while customizing Overview.
+    pub description: String,
+    /// Preferred initial width selected by the host.
+    #[serde(default)]
+    pub default_size: DashboardSize,
+    /// Host-editable settings passed to the plugin on each render request.
+    #[serde(default)]
+    pub options: Vec<DashboardOption>,
+}
+
+impl PluginDashboardWidget {
+    /// Builds the host-neutral descriptor contributed by this declaration.
+    pub fn descriptor(&self) -> DashboardWidgetDescriptor {
+        DashboardWidgetDescriptor::new(
+            self.id.clone(),
+            self.title.clone(),
+            self.description.clone(),
+            self.default_size,
+            self.options.clone(),
+        )
+    }
 }
 
 /// One action returned by a plugin's view model.
@@ -249,7 +286,7 @@ manifest-version = 1
 id = "org.example.hello"
 name = "Hello"
 version = "0.1.0"
-api-version = "0.1.0"
+api-version = "0.2.0"
 component = "plugin.wasm"
 
 [[services]]
@@ -265,10 +302,20 @@ effect = "read-only"
 id = "org.example.hello.main"
 title = "Hello"
 description = "Example plugin view."
+
+[[dashboard-widgets]]
+view = "org.example.hello.main"
+id = "org.example.hello.status"
+title = "Workspace status"
+description = "Connection and version information."
+default-size = "compact"
+options = [{ id = "limit", label = "Visible items", kind = { type = "number", default = 4, min = 1, max = 8 } }]
 "#;
         let parsed: PluginManifest = toml::from_str(manifest).unwrap();
         assert_eq!(parsed.api_version, PLUGIN_API_VERSION);
         assert_eq!(parsed.commands[0].effect, PluginEffect::ReadOnly);
+        assert_eq!(parsed.dashboard_widgets.len(), 1);
+        assert_eq!(parsed.dashboard_widgets[0].options[0].id(), "limit");
         assert!(
             toml::from_str::<PluginManifest>(&format!("{manifest}\nunknown = true\n")).is_err()
         );

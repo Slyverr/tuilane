@@ -8,8 +8,10 @@ use std::{
 };
 
 use thiserror::Error;
+use tuilane_plugin_api::DashboardWidget;
 use tuilane_plugin_api::plugin::{
-    PluginCommand, PluginId, PluginManifest, PluginServiceRequest, PluginView,
+    PluginCommand, PluginDashboardWidget, PluginId, PluginManifest, PluginServiceRequest,
+    PluginView,
 };
 use uuid::Uuid;
 use wasmtime::Engine;
@@ -133,6 +135,8 @@ pub struct RuntimeView {
     pub plugin_id: PluginId,
     /// View metadata validated against the component exports.
     pub view: PluginView,
+    /// Dashboard widget declarations owned by this view.
+    pub dashboard_widgets: Vec<PluginDashboardWidget>,
 }
 
 /// A recoverable load failure for one enabled plugin.
@@ -457,6 +461,13 @@ impl PluginManager {
                     .cloned()
                     .map(|view| RuntimeView {
                         plugin_id: plugin_id.clone(),
+                        dashboard_widgets: component
+                            .manifest()
+                            .dashboard_widgets
+                            .iter()
+                            .filter(|widget| widget.view == view.id)
+                            .cloned()
+                            .collect(),
                         view,
                     })
             })
@@ -567,6 +578,41 @@ impl PluginManager {
                 });
             }
             component.render(view_id)
+        };
+        if result.is_err() {
+            self.loaded.remove(&plugin_id);
+        }
+        result.map_err(Into::into)
+    }
+
+    /// Requests a view's declared dashboard widgets using its saved preferences.
+    pub fn dashboard_widgets(
+        &mut self,
+        value: &str,
+        view_id: &str,
+        preferences: &str,
+    ) -> Result<Vec<DashboardWidget>, PluginRuntimeError> {
+        let plugin_id = self.plugin_id(value)?;
+        self.ensure_enabled(&plugin_id)?;
+        self.ensure_loaded(&plugin_id)?;
+        let result = {
+            let component = self
+                .loaded
+                .get_mut(&plugin_id)
+                .ok_or_else(|| PluginRuntimeError::ComponentNotLoaded(plugin_id.to_string()))?;
+            if !component
+                .manifest()
+                .views
+                .iter()
+                .any(|view| view.id == view_id)
+            {
+                return Err(PluginRuntimeError::ContributionNotFound {
+                    plugin: plugin_id.to_string(),
+                    kind: "view",
+                    id: view_id.to_owned(),
+                });
+            }
+            component.dashboard(view_id, preferences)
         };
         if result.is_err() {
             self.loaded.remove(&plugin_id);

@@ -9,6 +9,7 @@ description = "Shared extension contracts for tuilane"
 serde.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 toml.workspace = true
 
 [lints]
