@@ -1,4 +1,4 @@
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -154,6 +154,14 @@ pub trait View {
     /// Renders the view's primary content.
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect);
 
+    /// Renders the primary content with the host's active theme.
+    ///
+    /// The default keeps existing views compatible; shared UI components should
+    /// override this hook when they need to honor the selected shell theme.
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, _theme: super::ThemePreset) {
+        self.render(frame, area);
+    }
+
     /// Returns host-rendered widgets contributed to the Overview dashboard.
     ///
     /// The host owns layout, input, and rendering. Implementations should return
@@ -177,6 +185,11 @@ pub trait View {
     /// corresponding arrows after giving the original character to the view, so
     /// text inputs can still receive those characters.
     fn handle_key(&mut self, _key: KeyEvent, _focus: super::FocusArea) -> bool {
+        false
+    }
+
+    /// Handles pointer interaction in the active view's content region.
+    fn handle_mouse(&mut self, _event: MouseEvent, _focus: super::FocusArea) -> bool {
         false
     }
 

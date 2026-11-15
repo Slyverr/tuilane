@@ -20,7 +20,8 @@ impl ThemePreset {
         }
     }
 
-    pub(super) fn header_style(self) -> Style {
+    /// Returns the heading style used by the selected theme.
+    pub fn header_style(self) -> Style {
         match self {
             Self::Default => Style::default()
                 .fg(Color::Cyan)
@@ -29,21 +30,24 @@ impl ThemePreset {
         }
     }
 
-    pub(super) fn accent_style(self) -> Style {
+    /// Returns the accent style used by the selected theme.
+    pub fn accent_style(self) -> Style {
         match self {
             Self::Default => Style::default().fg(Color::Cyan),
             Self::HighContrast => Style::default().fg(Color::Yellow),
         }
     }
 
-    pub(super) fn muted_style(self) -> Style {
+    /// Returns the secondary-text style used by the selected theme.
+    pub fn muted_style(self) -> Style {
         match self {
             Self::Default => Style::default().fg(Color::Gray),
             Self::HighContrast => Style::default().fg(Color::White),
         }
     }
 
-    pub(super) fn panel_style(self, focused: bool) -> Style {
+    /// Returns the foreground style for a focused or inactive panel.
+    pub fn panel_style(self, focused: bool) -> Style {
         match self {
             Self::Default if focused => Self::accent_style(self).add_modifier(Modifier::BOLD),
             Self::Default => Style::default(),
@@ -52,7 +56,8 @@ impl ThemePreset {
         }
     }
 
-    pub(super) fn navigation_item_style(self, selected: bool) -> Style {
+    /// Returns the foreground and selection background for a navigation row.
+    pub fn navigation_item_style(self, selected: bool) -> Style {
         if !selected {
             return Style::default();
         }

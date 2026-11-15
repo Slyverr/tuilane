@@ -207,6 +207,30 @@ struct DashboardWidgetView {
     opened: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
+struct MouseView {
+    descriptor: ViewDescriptor,
+    clicks: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl View for MouseView {
+    fn descriptor(&self) -> &ViewDescriptor {
+        &self.descriptor
+    }
+
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        frame.render_widget(Paragraph::new("mouse content"), area);
+    }
+
+    fn handle_mouse(&mut self, event: MouseEvent, focus: FocusArea) -> bool {
+        if focus == FocusArea::Content && event.kind == MouseEventKind::Down(MouseButton::Left) {
+            self.clicks.set(self.clicks.get() + 1);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl DashboardShellView {
     fn new() -> Self {
         Self {
@@ -579,6 +603,27 @@ fn clicking_visible_panels_moves_keyboard_focus() {
 }
 
 #[test]
+fn workspace_routes_content_clicks_to_the_active_view() {
+    let clicks = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(MouseView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("mouse").unwrap(),
+                "Mouse",
+                "View that accepts pointer input",
+            ),
+            clicks: clicks.clone(),
+        })
+        .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 10, 5)));
+    assert_eq!(clicks.get(), 1);
+}
+
+#[test]
 fn j_and_k_in_content_do_not_switch_tabs() {
     let mut workspace = workspace_with_two_views();
 
@@ -695,6 +740,8 @@ fn built_in_icons_fit_one_terminal_cell() {
         icons::DEFAULT,
         icons::OVERVIEW,
         icons::TASKS,
+        icons::TASK_OPEN,
+        icons::TASK_DONE,
         icons::CALENDAR,
         icons::PROJECTS,
         icons::NOTES,

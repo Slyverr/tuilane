@@ -6,6 +6,8 @@
 pub const DEFAULT: &str = "\u{f10c}"; // nf-fa-circle-o
 pub const OVERVIEW: &str = "\u{f015}"; // nf-fa-home
 pub const TASKS: &str = "\u{f0ae}"; // nf-fa-tasks
+pub const TASK_OPEN: &str = "\u{f10c}"; // nf-fa-circle-o
+pub const TASK_DONE: &str = "\u{f058}"; // nf-fa-check-circle
 pub const CALENDAR: &str = "\u{f073}"; // nf-fa-calendar
 pub const PROJECTS: &str = "\u{f07c}"; // nf-fa-folder-open
 pub const NOTES: &str = "\u{f249}"; // nf-fa-sticky-note

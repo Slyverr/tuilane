@@ -709,7 +709,24 @@ impl Workspace {
                     self.activate_dashboard_view(owner_index, &widget_id);
                     return true;
                 }
-                self.focus_at(mouse.column, mouse.row)
+                if self
+                    .selected
+                    .and_then(|index| self.views.get(index))
+                    .is_some_and(|view| view.value().dialog().is_some())
+                {
+                    return true;
+                }
+                let focus_changed = self.focus_at(mouse.column, mouse.row);
+                let view_handled = if rect_contains(self.last_regions.main, mouse.column, mouse.row)
+                    && self.focus == FocusArea::Content
+                {
+                    self.selected
+                        .and_then(|index| self.views.get_mut(index))
+                        .is_some_and(|view| view.value_mut().handle_mouse(mouse, self.focus))
+                } else {
+                    false
+                };
+                focus_changed || view_handled
             }
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 if !rect_contains(self.last_regions.tabs, mouse.column, mouse.row) {
@@ -1182,7 +1199,8 @@ impl Workspace {
             self.render_dashboard(frame, inner);
         } else {
             if let Some(view) = self.views.get_mut(index) {
-                view.value_mut().render(frame, inner);
+                view.value_mut()
+                    .render_with_theme(frame, inner, self.config.theme());
             }
         }
     }
