@@ -14,7 +14,7 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
     tasks::{TaskCommand, TaskCommandResult, TaskId, TaskStatus, TaskTitle},
 };
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, Keybinding, View};
 
 use crate::{
     AssistantConfig,
@@ -509,6 +509,30 @@ impl View for AssistantView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "✧"
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if self.pending_proposal.is_some() {
+            return vec![
+                Keybinding::new("Approve proposed change", "y"),
+                Keybinding::new("Reject proposed change", "n / Esc"),
+            ];
+        }
+        if self.worker.is_active() {
+            return vec![Keybinding::new("Cancel response", "Esc")];
+        }
+        if focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        vec![
+            Keybinding::new("Send prompt", "Enter"),
+            Keybinding::new("Clear conversation", "Ctrl+L"),
+        ]
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.drain_provider_events();
         let lines = self.render_lines();
@@ -673,16 +697,22 @@ fn sanitize_display(value: &str) -> String {
 }
 
 fn is_shell_navigation_key(key: KeyEvent) -> bool {
-    !key.modifiers
-        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
-        && matches!(
-            key.code,
-            KeyCode::Up
-                | KeyCode::Down
-                | KeyCode::Tab
-                | KeyCode::BackTab
-                | KeyCode::Char('j' | 'k' | 'i' | 'd' | 'q' | '?')
-        )
+    let move_between_tabs = key.code == KeyCode::Char('H')
+        || key.code == KeyCode::Char('L')
+        || (key.modifiers.contains(KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char('h' | 'l')));
+    move_between_tabs
+        || (!key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+            && matches!(
+                key.code,
+                KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Tab
+                    | KeyCode::BackTab
+                    | KeyCode::Char('j' | 'k' | 'i' | 'd' | 'q' | '?')
+            ))
 }
 
 #[cfg(test)]

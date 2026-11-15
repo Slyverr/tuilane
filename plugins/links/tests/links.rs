@@ -376,7 +376,7 @@ fn links_view_can_select_an_item_and_add_a_link_through_the_host() {
 }
 
 #[test]
-fn links_view_leaves_j_and_k_for_workspace_navigation() {
+fn links_view_leaves_j_and_k_for_host_aliasing() {
     let events = EventBus::new();
     let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
     let mut view = LinksView::new(commands, &events);

@@ -14,7 +14,7 @@ use tuilane_plugin_api::search::{
     SearchCommandResult, SearchQuery, SearchResult,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
 
 /// Search workspace items through the shared host command path.
 pub struct SearchView {
@@ -193,6 +193,43 @@ impl View for SearchView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "⌕"
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        if self.saving_name {
+            return vec![
+                Keybinding::new("Save search", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ];
+        }
+        if self.saved_searches_open {
+            return vec![
+                Keybinding::new("Move selection", "Up/Down or j/k"),
+                Keybinding::new("Run saved search", "Enter"),
+                Keybinding::new("Close saved searches", "Esc"),
+            ];
+        }
+        if self.editing {
+            return vec![
+                Keybinding::new("Run search", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+                Keybinding::new("Edit query", "Type"),
+            ];
+        }
+
+        vec![
+            Keybinding::new("Search", "/"),
+            Keybinding::new("Move results", "Up/Down or j/k"),
+            Keybinding::new("Change item filter", "f"),
+        ]
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let mut lines = if self.saving_name {
             vec![
@@ -289,7 +326,18 @@ impl View for SearchView {
                             % self.saved_searches.len();
                     }
                 }
+                KeyCode::Char('k') => {
+                    if !self.saved_searches.is_empty() {
+                        self.saved_selected = (self.saved_selected + self.saved_searches.len() - 1)
+                            % self.saved_searches.len();
+                    }
+                }
                 KeyCode::Down => {
+                    if !self.saved_searches.is_empty() {
+                        self.saved_selected = (self.saved_selected + 1) % self.saved_searches.len();
+                    }
+                }
+                KeyCode::Char('j') => {
                     if !self.saved_searches.is_empty() {
                         self.saved_selected = (self.saved_selected + 1) % self.saved_searches.len();
                     }

@@ -1112,6 +1112,10 @@ impl View for OverviewView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "◉"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         if area.width < 56 || area.height < 14 {
             let lines = Text::from(vec![
@@ -1124,7 +1128,8 @@ impl View for OverviewView {
                 Line::from("⌘ Commands · ▤ Storage"),
                 Line::from("⇄ Services · ◷ Events"),
                 Line::from("▣ Views · ◇ Permissions"),
-                Line::from("j/k move · l/← open · c collapse · [ ] resize"),
+                Line::from("Shift+H/L switches views · Alt+Tab opens picker"),
+                Line::from("j/k moves within lists"),
                 Line::from("? for help"),
             ]);
             frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
@@ -1212,8 +1217,8 @@ impl View for OverviewView {
     fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {
         frame.render_widget(
             Paragraph::new(Text::from(vec![
-                Line::from("Navigate views with j/k."),
-                Line::from("Move through lists with ↑/↓."),
+                Line::from("Shift+H/L switches views immediately; Alt+Tab opens the view picker."),
+                Line::from("Use j/k or ↑/↓ to move within lists."),
                 Line::from("Open actions with Ctrl-P."),
                 Line::from("Press ? for all shortcuts."),
             ]))
@@ -1229,7 +1234,7 @@ fn render_feature_card(
     area: Rect,
     (icon, title, description, color): (&str, &str, &str, Color),
 ) {
-    let title = Line::from(vec![
+    let mut title = Line::from(vec![
         Span::styled(
             icon,
             Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -1237,6 +1242,8 @@ fn render_feature_card(
         Span::raw(" "),
         Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
     ]);
+    title.spans.insert(0, Span::raw(" "));
+    title.spans.push(Span::raw(" "));
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -1280,6 +1287,7 @@ mod tests {
             assert!(text.contains("⌘ Commands"));
             assert!(text.contains("▤ Storage"));
             if width >= 56 && height >= 14 {
+                assert!(text.contains("╭ ⌘ Commands "));
                 assert!(text.contains("Committed"));
                 assert!(text.contains("subscribers"));
             } else {

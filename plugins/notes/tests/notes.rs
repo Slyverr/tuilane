@@ -207,7 +207,7 @@ fn notes_view_creates_records_through_the_host_command_path() {
 }
 
 #[test]
-fn notes_view_leaves_j_and_k_for_workspace_navigation() {
+fn notes_view_leaves_j_and_k_for_host_aliasing() {
     let events = EventBus::new();
     let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
     let mut view = NotesView::new(commands, &events);

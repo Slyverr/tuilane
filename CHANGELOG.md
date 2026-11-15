@@ -6,12 +6,14 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 ### Added
 
-- Support mouse clicks and scrolling for workspace navigation and panel focus.
+- Add an Alt+Tab view picker and immediate tab activation by keyboard and mouse.
+- Show prioritized view shortcuts on a single-line footer and list all bindings in help.
 
 ### Changed
 
-- Use two-letter view identifiers in the collapsed sidebar and remove decorative pixel icons.
-- Keep the Views panel title to a single label instead of duplicating resize hints there.
+- Replace the resizable sidebar with compact icon-and-title tabs and an optional contextual side panel.
+- Keep `j`/`k` available for in-view vertical navigation and `Shift+H`/`Shift+L` for switching views.
+- Add spacing around panel titles to separate them from the border corners.
 
 ## [0.11.0] - 2026-11-14
 

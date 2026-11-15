@@ -2,6 +2,49 @@ use crossterm::event::KeyEvent;
 use ratatui::{Frame, layout::Rect};
 use tuilane_plugin_api::ViewDescriptor;
 
+/// One key and action pair a view displays in the workspace footer and help.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Keybinding {
+    action: Box<str>,
+    key: Box<str>,
+    priority: u8,
+}
+
+impl Keybinding {
+    /// Creates a contextual shortcut description for a view.
+    pub fn new(action: impl Into<Box<str>>, key: impl Into<Box<str>>) -> Self {
+        Self {
+            action: action.into(),
+            key: key.into(),
+            priority: 50,
+        }
+    }
+
+    /// Sets how prominently this shortcut appears in the one-line footer.
+    ///
+    /// Higher values are shown first; equal priorities keep the order returned
+    /// by the view. Every shortcut remains available in the help overlay.
+    pub fn with_priority(mut self, priority: u8) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Returns the action label shown to the user.
+    pub fn action(&self) -> &str {
+        &self.action
+    }
+
+    /// Returns the key label shown to the user.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Returns this shortcut's footer display priority.
+    pub fn priority(&self) -> u8 {
+        self.priority
+    }
+}
+
 /// One action a view contributes to the workspace command palette.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewAction {
@@ -45,16 +88,32 @@ pub trait View {
     /// Returns stable identity and display metadata for this view.
     fn descriptor(&self) -> &ViewDescriptor;
 
+    /// Returns the compact icon displayed next to this view's tab title.
+    ///
+    /// The title remains visible so the icon is never the only identifier.
+    fn icon(&self) -> &'static str {
+        "◦"
+    }
+
     /// Renders the view's primary content.
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect);
 
     /// Handles a key event before the shell routes it to global navigation.
     ///
     /// Return `true` when the view consumes the event. Views should use arrow keys
-    /// for in-view vertical lists and leave `j`/`k` for workspace navigation,
-    /// except while an active text input needs those characters.
+    /// for in-view vertical navigation. The host offers `j`/`k` as aliases for the
+    /// corresponding arrows after giving the original character to the view, so
+    /// text inputs can still receive those characters.
     fn handle_key(&mut self, _key: KeyEvent, _focus: super::FocusArea) -> bool {
         false
+    }
+
+    /// Returns shortcuts that are available in the view's current state.
+    ///
+    /// Implementations can change the returned list while editing or confirming
+    /// an action so the footer and help describe the controls that currently work.
+    fn keybindings(&self, _focus: super::FocusArea) -> Vec<Keybinding> {
+        Vec::new()
     }
 
     /// Renders contextual details when the inspector is open.
@@ -65,9 +124,9 @@ pub trait View {
         false
     }
 
-    /// Renders supplemental content when the bottom drawer is open.
+    /// Renders supplemental content when the supplemental side panel is open.
     ///
-    /// Return `true` when this view draws drawer content. The shell displays a
+    /// Return `true` when this view draws supplemental content. The shell displays a
     /// plain fallback when no contribution is available.
     fn render_drawer(&mut self, _frame: &mut Frame<'_>, _area: Rect) -> bool {
         false

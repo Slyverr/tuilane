@@ -12,7 +12,7 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
 
 enum InputMode {
     Title { id: Option<IdeaId>, value: String },
@@ -189,6 +189,10 @@ impl View for IdeasView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "✦"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
         frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
@@ -285,6 +289,29 @@ impl View for IdeasView {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if self.input_mode.is_none() && focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        match self.input_mode.as_ref() {
+            Some(InputMode::Title { .. }) => vec![
+                Keybinding::new("Save", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ],
+            Some(InputMode::ConfirmDelete(_)) => vec![
+                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Cancel", "n / Esc"),
+            ],
+            None => vec![
+                Keybinding::new("Move selection", "Up/Down or j/k"),
+                Keybinding::new("Capture idea", "c"),
+                Keybinding::new("Rename idea", "e"),
+                Keybinding::new("Delete idea", "Delete"),
+            ],
         }
     }
 }

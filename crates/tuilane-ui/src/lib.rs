@@ -5,5 +5,5 @@ mod view;
 mod workspace;
 
 pub use config::{KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
-pub use view::{View, ViewAction};
+pub use view::{Keybinding, View, ViewAction};
 pub use workspace::{FocusArea, Workspace, WorkspaceError, require_interactive_terminal, run};

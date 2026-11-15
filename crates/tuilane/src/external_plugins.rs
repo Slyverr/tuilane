@@ -234,7 +234,7 @@ impl View for ExternalPluginView {
         if let Some(error) = &self.failure {
             frame.render_widget(
                 Paragraph::new(format!("Plugin view failed: {error}"))
-                    .block(block.title(self.descriptor.title()))
+                    .block(block.title(format!(" {} ", self.descriptor.title())))
                     .wrap(Wrap { trim: true }),
                 area,
             );
@@ -265,7 +265,7 @@ impl View for ExternalPluginView {
         }
         frame.render_widget(
             Paragraph::new(Text::from(lines))
-                .block(block.title(model.title()))
+                .block(block.title(format!(" {} ", model.title())))
                 .wrap(Wrap { trim: true }),
             area,
         );

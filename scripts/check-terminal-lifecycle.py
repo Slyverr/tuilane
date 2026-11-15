@@ -36,7 +36,7 @@ def wait_for_workspace(
                 continue
             raise
 
-        if b"Views" in output:
+        if b"Overview" in output:
             return output
 
     raise TimeoutError("tuilane did not render its workspace in time")

@@ -70,10 +70,10 @@ impl ThemePreset {
 /// Initial shell layout preset.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LayoutPreset {
-    /// Show navigation when terminal width permits it.
+    /// Show the contextual side panel when terminal width permits it.
     #[default]
     Balanced,
-    /// Keep the primary view full-width and navigate views with the keyboard.
+    /// Keep the primary view full-width by hiding the contextual side panel.
     Focus,
 }
 

@@ -15,7 +15,7 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
     items::{ItemRef, ItemSummary},
 };
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, Keybinding, View};
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -328,6 +328,38 @@ impl LinksView {
 impl View for LinksView {
     fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
+    }
+
+    fn icon(&self) -> &'static str {
+        "↗"
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if self.input_mode.is_none() && focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        if self.input_mode.is_some() {
+            return vec![
+                Keybinding::new("Submit", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ];
+        }
+
+        let mut bindings = vec![Keybinding::new("Move selection", "Up/Down or j/k")];
+        if !matches!(self.direction, Direction::References) {
+            bindings.push(Keybinding::new("Open related item", "Enter"));
+        }
+        bindings.extend([
+            Keybinding::new("Select source item", "s"),
+            Keybinding::new("Add item link", "a"),
+            Keybinding::new("Add external reference", "x"),
+            Keybinding::new("Show backlinks", "b"),
+            Keybinding::new("Show outgoing links", "o"),
+            Keybinding::new("Show references", "r"),
+            Keybinding::new("Remove selected relation", "Delete"),
+        ]);
+        bindings
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

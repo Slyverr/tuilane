@@ -185,7 +185,7 @@ fn ideas_view_captures_records_through_the_host_command_path() {
 }
 
 #[test]
-fn ideas_view_leaves_j_and_k_for_workspace_navigation() {
+fn ideas_view_leaves_j_and_k_for_host_aliasing() {
     let events = EventBus::new();
     let commands = Rc::new(RefCell::new(CommandDispatcher::new()));
     let mut view = IdeasView::new(commands, &events);

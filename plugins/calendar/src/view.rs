@@ -15,7 +15,7 @@ use ratatui::{
 use tuilane_core::{EventBus, EventSubscription, ServiceBroker, ServiceBrokerError};
 use tuilane_plugin_api::tasks::{TaskDate, TaskSummary, TasksByDateV1, TasksChangedV1};
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View};
+use tuilane_ui::{FocusArea, Keybinding, View};
 
 /// Calendar month view with keyboard date selection and an optional Tasks inspector.
 pub struct CalendarView {
@@ -176,6 +176,23 @@ fn days_in_month(date: NaiveDate) -> u32 {
 impl View for CalendarView {
     fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
+    }
+
+    fn icon(&self) -> &'static str {
+        "◷"
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        vec![
+            Keybinding::new("Move day", "Left/Right"),
+            Keybinding::new("Move week", "Up/Down or j/k"),
+            Keybinding::new("Move month", "PageUp/PageDown"),
+            Keybinding::new("Go to today", "t"),
+        ]
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {

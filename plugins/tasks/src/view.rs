@@ -13,7 +13,7 @@ use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
 
 enum InputMode {
     Title { action: TitleAction, value: String },
@@ -276,6 +276,10 @@ impl View for TasksView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "✓"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
         frame.render_widget(
@@ -429,6 +433,35 @@ impl View for TasksView {
                 }
                 _ => false,
             }
+        }
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if self.input_mode.is_none() && focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        match self.input_mode.as_ref() {
+            Some(InputMode::Title { .. }) => vec![
+                Keybinding::new("Save", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ],
+            Some(InputMode::DueDate { .. }) => vec![
+                Keybinding::new("Save due date", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ],
+            Some(InputMode::ConfirmDelete(_)) => vec![
+                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Cancel", "n / Esc"),
+            ],
+            None => vec![
+                Keybinding::new("Move selection", "Up/Down or j/k"),
+                Keybinding::new("Create task", "c"),
+                Keybinding::new("Rename task", "e"),
+                Keybinding::new("Set due date", "u"),
+                Keybinding::new("Toggle completion", "x"),
+                Keybinding::new("Delete task", "Delete"),
+            ],
         }
     }
 

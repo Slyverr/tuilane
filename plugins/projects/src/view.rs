@@ -12,7 +12,7 @@ use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle, ProjectsChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
 
 enum InputMode {
     Title {
@@ -193,6 +193,10 @@ impl View for ProjectsView {
         &self.descriptor
     }
 
+    fn icon(&self) -> &'static str {
+        "◇"
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
         frame.render_widget(
@@ -295,6 +299,29 @@ impl View for ProjectsView {
                 }
                 _ => false,
             }
+        }
+    }
+
+    fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
+        if self.input_mode.is_none() && focus != FocusArea::Content {
+            return Vec::new();
+        }
+
+        match self.input_mode.as_ref() {
+            Some(InputMode::Title { .. }) => vec![
+                Keybinding::new("Save", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ],
+            Some(InputMode::ConfirmDelete(_)) => vec![
+                Keybinding::new("Confirm delete", "y"),
+                Keybinding::new("Cancel", "n / Esc"),
+            ],
+            None => vec![
+                Keybinding::new("Move selection", "Up/Down or j/k"),
+                Keybinding::new("Create project", "c"),
+                Keybinding::new("Edit project", "e"),
+                Keybinding::new("Delete project", "Delete"),
+            ],
         }
     }
 
