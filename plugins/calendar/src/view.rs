@@ -67,7 +67,6 @@ impl CalendarView {
         let mut lines = vec![
             Line::from(self.selected_date.format("%B %Y").to_string())
                 .style(Style::default().add_modifier(Modifier::BOLD)),
-            Line::from("←/→ day  ↑/↓ week  PgUp/PgDn month  t today"),
             Line::from("Mo   Tu   We   Th   Fr   Sa   Su"),
         ];
 
@@ -188,10 +187,10 @@ impl View for CalendarView {
         }
 
         vec![
-            Keybinding::new("Day", "←/→"),
-            Keybinding::new("Week", "↑/↓, j/k"),
-            Keybinding::new("Month", "PgUp/PgDn"),
-            Keybinding::new("Today", "t"),
+            Keybinding::new("Day", "←/→").with_priority(10),
+            Keybinding::new("Week", "↑/↓, j/k").with_priority(10),
+            Keybinding::new("Month", "PgUp/PgDn").with_priority(10),
+            Keybinding::new("Today", "t").with_priority(90),
         ]
     }
 

@@ -14,7 +14,7 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
     tasks::{TaskCommand, TaskCommandResult, TaskId, TaskStatus, TaskTitle},
 };
-use tuilane_ui::{FocusArea, Keybinding, View};
+use tuilane_ui::{FocusArea, Keybinding, View, render_empty_state};
 
 use crate::{
     AssistantConfig,
@@ -474,9 +474,7 @@ impl AssistantView {
     }
 
     fn render_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from(
-            "Enter sends · Esc cancels · Ctrl-L clears conversation",
-        )];
+        let mut lines = Vec::new();
         for entry in &self.transcript {
             let label = match entry.kind {
                 TranscriptKind::User => "You",
@@ -497,7 +495,6 @@ impl AssistantView {
                     .lines()
                     .map(|line| Line::from(line.to_owned())),
             );
-            lines.push(Line::from("Press y to approve, n or Esc to reject."));
         }
         lines.push(Line::from(format!("You> {}_", self.input)));
         lines
@@ -516,25 +513,38 @@ impl View for AssistantView {
     fn keybindings(&self, focus: FocusArea) -> Vec<Keybinding> {
         if self.pending_proposal.is_some() {
             return vec![
-                Keybinding::new("Approve", "y"),
-                Keybinding::new("Reject", "n / Esc"),
+                Keybinding::new("Approve", "y").with_priority(100),
+                Keybinding::new("Reject", "n / Esc").with_priority(90),
             ];
         }
         if self.worker.is_active() {
-            return vec![Keybinding::new("Cancel", "Esc")];
+            return vec![Keybinding::new("Cancel", "Esc").with_priority(100)];
         }
         if focus != FocusArea::Content {
             return Vec::new();
         }
 
         vec![
-            Keybinding::new("Send", "Enter"),
-            Keybinding::new("Clear", "Ctrl+L"),
+            Keybinding::new("Send", "Enter").with_priority(90),
+            Keybinding::new("Clear", "Ctrl+L").with_priority(30),
         ]
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.drain_provider_events();
+        if self.transcript.is_empty()
+            && self.input.is_empty()
+            && self.pending_proposal.is_none()
+            && !self.worker.is_active()
+        {
+            render_empty_state(
+                frame,
+                area,
+                "Start a conversation",
+                "Your messages and answers will appear here.",
+            );
+            return;
+        }
         let lines = self.render_lines();
         let scroll = lines.len().saturating_sub(usize::from(area.height)) as u16;
         frame.render_widget(
@@ -617,7 +627,6 @@ impl View for AssistantView {
                     .lines()
                     .map(|line| Line::from(line.to_owned())),
             );
-            lines.push(Line::from("Press y to approve, n or Esc to reject."));
         } else if let Some(status) = &self.status {
             lines.extend(status.lines().map(|line| Line::from(line.to_owned())));
         }

@@ -3,7 +3,7 @@ use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color, widget
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
     FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, Workspace,
-    WorkspaceConfig, WorkspaceError,
+    WorkspaceConfig, WorkspaceError, render_empty_state,
 };
 
 struct TestView {
@@ -248,6 +248,8 @@ fn alt_tab_opens_a_selector_that_cycles_and_activates_views() {
     assert!(popup.contains("Views"));
     assert!(popup.contains("Overview"));
     assert!(popup.contains("Activity"));
+    assert!(popup.contains("2/2"));
+    assert!(popup.contains("test view contribution"));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
 
     workspace.handle_key(key(KeyCode::Down));
@@ -272,7 +274,7 @@ fn clicking_a_view_in_the_alt_tab_picker_activates_it() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 15, 12)));
+    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 15, 11)));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
 }
 
@@ -287,14 +289,14 @@ fn tab_picker_filters_views_and_backspace_edits_the_query() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let calendar_row = (0..80)
-        .map(|x| terminal.backend().buffer()[(x, 12)].symbol())
+        .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
         .collect::<String>();
     assert!(calendar_row.contains("Calendar"), "row: {calendar_row}");
 
     workspace.handle_key(key(KeyCode::Char('d')));
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let empty_row = (0..80)
-        .map(|x| terminal.backend().buffer()[(x, 12)].symbol())
+        .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
         .collect::<String>();
     assert!(empty_row.contains("No matching views"), "row: {empty_row}");
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
@@ -373,7 +375,7 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(focus_text.contains("◦ Overview"));
+    assert!(focus_text.contains("◦  Overview"));
     assert!(focus_text.contains("Overview"));
 
     let mut themed_workspace = Workspace::with_config(WorkspaceConfig::new(
@@ -388,9 +390,9 @@ fn focus_layout_hides_navigation_and_high_contrast_marks_selection() {
     themed_terminal
         .draw(|frame| themed_workspace.render(frame))
         .unwrap();
-    let selected_label = &themed_terminal.backend().buffer()[(3, 0)];
+    let selected_label = &themed_terminal.backend().buffer()[(4, 0)];
     assert_eq!(selected_label.symbol(), "O");
-    assert_eq!(selected_label.fg, Color::Yellow);
+    assert_eq!(selected_label.bg, Color::Yellow);
 }
 
 #[test]
@@ -405,15 +407,15 @@ fn tabs_render_icons_and_mark_the_immediately_active_view() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(text.contains("◦ Overview"));
-    assert!(text.contains("◦ Activity"));
+    assert!(text.contains("◦  Overview"));
+    assert!(text.contains("◦  Activity"));
     assert!(!text.contains("Views"));
 
     workspace.handle_key(shift_key(KeyCode::Char('l')));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(14, 0)].fg, Color::Cyan);
+    assert_eq!(buffer[(14, 0)].bg, Color::Cyan);
     let content = buffer
         .content()
         .iter()
@@ -469,8 +471,32 @@ fn workspace_renders_on_wide_and_compact_terminals() {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("Overview"));
-        assert!(text.contains("◦ Overview"));
+        assert!(text.contains("◦  Overview"));
     }
+}
+
+#[test]
+fn empty_state_centers_the_title_and_next_step() {
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_empty_state(
+                frame,
+                frame.area(),
+                "No notes yet",
+                "Create a note to begin.",
+            );
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let title_row = (0..40).map(|x| buffer[(x, 4)].symbol()).collect::<String>();
+    let detail_row = (0..40).map(|x| buffer[(x, 5)].symbol()).collect::<String>();
+    assert!(title_row.contains("No notes yet"), "row: {title_row}");
+    assert!(
+        detail_row.contains("Create a note to begin."),
+        "row: {detail_row}"
+    );
 }
 
 #[test]
@@ -506,24 +532,28 @@ fn footer_and_help_show_view_owned_shortcuts() {
 #[test]
 fn footer_keeps_one_line_and_prioritizes_view_actions() {
     let mut workspace = workspace_with_two_views();
-    let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(26, 12)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
-    let footer = (0..40)
+    let footer = (0..26)
         .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
         .collect::<String>();
     assert!(footer.contains("[c] Create"), "footer: {footer}");
     assert!(footer.contains("Help +"), "footer: {footer}");
     assert!(!footer.contains("[e] Rename"), "footer: {footer}");
+    assert!(!footer.contains("[Alt+Tab]"), "footer: {footer}");
+    assert!(!footer.contains("[Shift+H/L]"), "footer: {footer}");
 }
 
 #[test]
-fn panel_titles_are_separated_from_the_top_border() {
+fn view_title_appears_in_the_tab_without_a_duplicate_panel_title() {
     let mut workspace = workspace_with_two_views();
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(1, 1)].symbol(), " ");
-    assert_eq!(buffer[(2, 1)].symbol(), "O");
+    let tabs = (0..80).map(|x| buffer[(x, 0)].symbol()).collect::<String>();
+    let panel_top = (0..80).map(|x| buffer[(x, 1)].symbol()).collect::<String>();
+    assert!(tabs.contains("Overview"), "tabs: {tabs}");
+    assert!(!panel_top.contains("Overview"), "panel top: {panel_top}");
 }
 
 #[test]
@@ -732,4 +762,24 @@ fn command_palette_overlay_renders_on_compact_terminals() {
         .collect::<String>();
     assert!(text.contains("Commands"));
     assert!(text.contains("Quit workspace"));
+}
+
+#[test]
+fn command_palette_shows_result_context_and_description() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let text = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("Overview"));
+    assert!(text.contains("View"));
+    assert!(text.contains("test view contribution"));
 }

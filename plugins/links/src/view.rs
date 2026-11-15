@@ -15,7 +15,7 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
     items::{ItemRef, ItemSummary},
 };
-use tuilane_ui::{FocusArea, Keybinding, View};
+use tuilane_ui::{FocusArea, Keybinding, View, render_empty_state};
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -251,14 +251,12 @@ impl LinksView {
     }
 
     fn lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from(
-            "s select item  a add link  b backlinks  o outgoing  x add reference  Enter follow  Delete remove",
-        )];
+        let mut lines = Vec::new();
         lines.push(Line::from(format!(
             "Item: {}",
             self.item
                 .as_ref()
-                .map_or("(choose with s)".to_owned(), ToString::to_string)
+                .map_or("not selected".to_owned(), ToString::to_string)
         )));
         match self.direction {
             Direction::Outgoing | Direction::Backlinks => {
@@ -346,25 +344,34 @@ impl View for LinksView {
             ];
         }
 
-        let mut bindings = vec![Keybinding::new("Move", "↑/↓, j/k")];
+        let mut bindings = vec![Keybinding::new("Move", "↑/↓, j/k").with_priority(10)];
         if !matches!(self.direction, Direction::References) {
-            bindings.push(Keybinding::new("Open", "Enter"));
+            bindings.push(Keybinding::new("Open", "Enter").with_priority(70));
         }
         bindings.extend([
-            Keybinding::new("Source", "s"),
-            Keybinding::new("Link", "a"),
-            Keybinding::new("Reference", "x"),
-            Keybinding::new("Backlinks", "b"),
-            Keybinding::new("Outgoing", "o"),
-            Keybinding::new("References", "r"),
-            Keybinding::new("Remove", "Delete"),
+            Keybinding::new("Source", "s").with_priority(100),
+            Keybinding::new("Link", "a").with_priority(90),
+            Keybinding::new("Reference", "x").with_priority(80),
+            Keybinding::new("Backlinks", "b").with_priority(70),
+            Keybinding::new("Outgoing", "o").with_priority(60),
+            Keybinding::new("References", "r").with_priority(50),
+            Keybinding::new("Remove", "Delete").with_priority(40),
         ]);
         bindings
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+        if self.item.is_none() && self.input_mode.is_none() && self.status.is_none() {
+            render_empty_state(
+                frame,
+                area,
+                "Connect related work",
+                "Choose a task, project, note, or idea to see its links.",
+            );
+        } else {
+            frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+        }
     }
 
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {

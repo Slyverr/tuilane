@@ -8,12 +8,15 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 
 - Add a searchable Alt+Tab view picker and immediate tab activation by keyboard and mouse.
 - Fit prioritized, compact view shortcuts on one footer line and list all bindings in help.
+- Show view descriptions and command context in searchable pickers.
 
 ### Changed
 
 - Replace the resizable sidebar with compact icon-and-title tabs and an optional contextual side panel.
 - Keep `j`/`k` available for in-view vertical navigation and `Shift+H`/`Shift+L` for switching views.
 - Add spacing around panel titles to separate them from the border corners.
+- Highlight the active tab without repeating its title in the content border.
+- Center empty-state guidance and prioritize active-view actions over global navigation in the footer.
 
 ## [0.11.0] - 2026-11-14
 

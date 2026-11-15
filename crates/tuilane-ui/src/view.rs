@@ -1,6 +1,38 @@
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::{Alignment, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::Paragraph,
+};
 use tuilane_plugin_api::ViewDescriptor;
+
+/// Renders a centered title and a short next-step message for an empty view.
+pub fn render_empty_state(frame: &mut Frame<'_>, area: Rect, title: &str, detail: &str) {
+    if area.is_empty() {
+        return;
+    }
+
+    let lines = vec![
+        Line::from(Span::styled(
+            title.to_owned(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(detail.to_owned()),
+    ];
+    let height = area.height.min(lines.len() as u16);
+    let message_area = Rect::new(
+        area.x,
+        area.y + area.height.saturating_sub(height) / 2,
+        area.width,
+        height,
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(lines)).alignment(Alignment::Center),
+        message_area,
+    );
+}
 
 /// One key and action pair a view displays in the workspace footer and help.
 #[derive(Clone, Debug, Eq, PartialEq)]

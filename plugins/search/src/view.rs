@@ -14,7 +14,7 @@ use tuilane_plugin_api::search::{
     SearchCommandResult, SearchQuery, SearchResult,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
 
 /// Search workspace items through the shared host command path.
 pub struct SearchView {
@@ -170,7 +170,7 @@ impl SearchView {
 
     fn result_lines(&self) -> Vec<Line<'static>> {
         if self.results.is_empty() {
-            return vec![Line::from("No matches yet. Press / to search.")];
+            return Vec::new();
         }
         self.results
             .iter()
@@ -210,9 +210,9 @@ impl View for SearchView {
         }
         if self.saved_searches_open {
             return vec![
-                Keybinding::new("Move", "↑/↓, j/k"),
-                Keybinding::new("Run", "Enter"),
-                Keybinding::new("Close", "Esc"),
+                Keybinding::new("Move", "↑/↓, j/k").with_priority(10),
+                Keybinding::new("Run", "Enter").with_priority(90),
+                Keybinding::new("Close", "Esc").with_priority(30),
             ];
         }
         if self.editing {
@@ -224,20 +224,78 @@ impl View for SearchView {
         }
 
         vec![
-            Keybinding::new("Search", "/"),
-            Keybinding::new("Results", "↑/↓, j/k"),
-            Keybinding::new("Filter", "f"),
+            Keybinding::new("Search", "/").with_priority(90),
+            Keybinding::new("Results", "↑/↓, j/k").with_priority(10),
+            Keybinding::new("Filter", "f").with_priority(80),
         ]
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        if self.status.is_none() && !self.saving_name {
+            if self.saved_searches_open && self.saved_searches.is_empty() {
+                render_empty_state(
+                    frame,
+                    area,
+                    "No saved searches",
+                    "Save a search from Commands to keep it for later.",
+                );
+                return;
+            }
+
+            if !self.saved_searches_open && self.results.is_empty() {
+                if self.query.is_empty() && !self.editing {
+                    render_empty_state(
+                        frame,
+                        area,
+                        "Search your workspace",
+                        "Find tasks, projects, notes, and ideas by their content.",
+                    );
+                    return;
+                }
+
+                let header_lines = if self.editing {
+                    vec![Line::from(format!("/{}_", self.query))]
+                } else {
+                    vec![
+                        Line::from(format!("Query: {}", self.query)),
+                        Line::from(format!(
+                            "Filter: {}",
+                            self.kind.as_deref().unwrap_or("all items")
+                        )),
+                    ]
+                };
+                let header_height = header_lines.len() as u16;
+                frame.render_widget(
+                    Paragraph::new(header_lines),
+                    Rect::new(area.x, area.y, area.width, header_height.min(area.height)),
+                );
+                render_empty_state(
+                    frame,
+                    Rect::new(
+                        area.x,
+                        area.y.saturating_add(header_height),
+                        area.width,
+                        area.height.saturating_sub(header_height),
+                    ),
+                    if self.editing {
+                        "Keep typing"
+                    } else {
+                        "No matches"
+                    },
+                    if self.editing {
+                        "Search results will appear here."
+                    } else {
+                        "Try a different search or item filter."
+                    },
+                );
+                return;
+            }
+        }
+
         let mut lines = if self.saving_name {
-            vec![
-                Line::from(format!("Save search as: {}_", self.save_name)),
-                Line::from("Enter saves; Esc cancels."),
-            ]
+            vec![Line::from(format!("Save search as: {}_", self.save_name))]
         } else if self.saved_searches_open {
-            let mut lines = vec![Line::from("Saved searches — Enter runs; Esc closes")];
+            let mut lines = vec![Line::from("Saved searches")];
             if self.saved_searches.is_empty() {
                 lines.push(Line::from(
                     "No saved searches. Save one from the command palette.",
@@ -265,15 +323,15 @@ impl View for SearchView {
             lines
         } else {
             let mut lines = vec![Line::from(if self.editing {
-                format!("/{}", self.query)
+                format!("/{}_", self.query)
             } else if self.query.is_empty() {
-                "Press / to search workspace items".to_owned()
+                "Search your workspace".to_owned()
             } else {
                 format!("Query: {}", self.query)
             })];
             if !self.editing {
                 lines.push(Line::from(format!(
-                    "Filter: {} — press f to change",
+                    "Filter: {}",
                     self.kind.as_deref().unwrap_or("all items")
                 )));
             }

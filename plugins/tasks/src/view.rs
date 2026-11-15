@@ -13,7 +13,7 @@ use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
 
 enum InputMode {
     Title { action: TitleAction, value: String },
@@ -179,27 +179,7 @@ impl TasksView {
         let key_style = Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD);
-        let hint_style = Style::default().fg(Color::Gray);
-        let mut lines = vec![Line::from(vec![
-            Span::styled("c", key_style),
-            Span::styled(" Create   ", hint_style),
-            Span::styled("e", key_style),
-            Span::styled(" Edit   ", hint_style),
-            Span::styled("u", key_style),
-            Span::styled(" Due date   ", hint_style),
-            Span::styled("x", key_style),
-            Span::styled(" Complete   ", hint_style),
-            Span::styled("↑/↓", key_style),
-            Span::styled(" Select", hint_style),
-        ])];
-        if self.tasks.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled("＋", Style::default().fg(Color::Cyan)),
-                Span::raw("  No tasks yet. Press "),
-                Span::styled("c", key_style),
-                Span::raw(" to create one."),
-            ]));
-        }
+        let mut lines = Vec::new();
         for (index, task) in self.tasks.iter().enumerate() {
             let selected = Some(index) == self.selected;
             let marker = if selected { "›" } else { " " };
@@ -237,20 +217,17 @@ impl TasksView {
                 value,
             }) => {
                 lines.push(Line::from(format!("New task: {value}_")));
-                lines.push(Line::from("Enter saves; Esc cancels."));
             }
             Some(InputMode::Title {
                 action: TitleAction::Rename(_),
                 value,
             }) => {
                 lines.push(Line::from(format!("New title: {value}_")));
-                lines.push(Line::from("Enter saves; Esc cancels."));
             }
             Some(InputMode::DueDate { value, .. }) => {
                 lines.push(Line::from(format!(
                     "Due date (YYYY-MM-DD, blank clears): {value}_"
                 )));
-                lines.push(Line::from("Enter saves; Esc cancels."));
             }
             Some(InputMode::ConfirmDelete(id)) => {
                 let title = self
@@ -258,9 +235,7 @@ impl TasksView {
                     .iter()
                     .find(|task| task.id() == id)
                     .map_or("this task", |task| task.title().as_str());
-                lines.push(Line::from(format!(
-                    "Delete '{title}'? y confirms; n cancels."
-                )));
+                lines.push(Line::from(format!("Delete '{title}'?")));
             }
             None => {}
         }
@@ -282,10 +257,19 @@ impl View for TasksView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        frame.render_widget(
-            Paragraph::new(self.task_lines()).wrap(Wrap { trim: true }),
-            area,
-        );
+        if self.tasks.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+            render_empty_state(
+                frame,
+                area,
+                "No tasks yet",
+                "Create a task to start organizing your work.",
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(self.task_lines()).wrap(Wrap { trim: true }),
+                area,
+            );
+        }
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {
@@ -455,12 +439,12 @@ impl View for TasksView {
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move", "↑/↓, j/k"),
-                Keybinding::new("Create", "c"),
-                Keybinding::new("Rename", "e"),
-                Keybinding::new("Due", "u"),
-                Keybinding::new("Complete", "x"),
-                Keybinding::new("Delete", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k").with_priority(10),
+                Keybinding::new("Create", "c").with_priority(90),
+                Keybinding::new("Rename", "e").with_priority(80),
+                Keybinding::new("Due", "u").with_priority(70),
+                Keybinding::new("Complete", "x").with_priority(60),
+                Keybinding::new("Delete", "Delete").with_priority(50),
             ],
         }
     }

@@ -86,6 +86,9 @@ enum PaletteAction {
 
 struct PaletteEntry {
     label: String,
+    context: String,
+    description: String,
+    icon: &'static str,
     search_text: String,
     action: PaletteAction,
 }
@@ -589,11 +592,23 @@ impl Workspace {
 
         let candidates = self.switcher_candidates();
         let width = area.width.saturating_sub(4).min(60);
-        let visible_count = candidates
-            .len()
-            .max(1)
-            .min(usize::from(area.height.saturating_sub(5)));
-        let height = (visible_count as u16 + 3).min(area.height.saturating_sub(2));
+        let inner_height = usize::from(area.height.saturating_sub(4));
+        let show_detail = inner_height >= 3 && !candidates.is_empty();
+        let show_hints = inner_height >= 4;
+        let visible_count = if candidates.is_empty() {
+            0
+        } else {
+            candidates.len().min(
+                inner_height
+                    .saturating_sub(1 + usize::from(show_detail) + usize::from(show_hints))
+                    .max(1),
+            )
+        };
+        let line_count = 1
+            + visible_count.max(usize::from(candidates.is_empty()))
+            + usize::from(show_detail)
+            + usize::from(show_hints);
+        let height = (line_count as u16 + 2).min(area.height.saturating_sub(2));
         let overlay = Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
             y: area.y + area.height.saturating_sub(height) / 2,
@@ -602,15 +617,17 @@ impl Workspace {
         };
         self.last_regions.switcher = overlay;
 
-        let mut lines = vec![Line::from(vec![
-            Span::styled(" / ", self.config.theme().header_style()),
-            Span::raw(truncate_to_width(
-                &self.switcher_query,
-                usize::from(width.saturating_sub(8)),
-            )),
-        ])];
+        let theme = self.config.theme();
+        let inner_width = usize::from(width.saturating_sub(2));
+        let mut lines = vec![search_prompt_line(
+            " / ",
+            &self.switcher_query,
+            &format!("{}/{}", candidates.len(), self.views.len()),
+            inner_width,
+            theme,
+        )];
         if candidates.is_empty() {
-            lines.push(Line::from("   No matching views").style(self.config.theme().muted_style()));
+            lines.push(Line::from("No matching views").style(theme.muted_style()));
         } else {
             let selected_position = candidates
                 .iter()
@@ -635,27 +652,38 @@ impl Workspace {
                         view.value().icon(),
                         view.descriptor().title()
                     ),
-                    usize::from(width.saturating_sub(4)),
+                    inner_width,
                 );
                 let item_area =
                     Rect::new(overlay.x + 1, overlay.y + 2 + offset as u16, width - 2, 1);
                 self.last_switcher_items.push((index, item_area));
                 let style = if selected {
-                    self.config.theme().navigation_item_style(true)
+                    theme.navigation_item_style(true)
                 } else {
-                    self.config.theme().muted_style()
+                    theme.muted_style()
                 };
                 lines.push(Line::from(label).style(style));
             }
+            if show_detail && let Some(view) = self.views.get(self.switcher_selected) {
+                lines.push(
+                    Line::from(truncate_to_width(
+                        view.descriptor().description(),
+                        inner_width,
+                    ))
+                    .style(theme.muted_style()),
+                );
+            }
+        }
+        if show_hints {
+            lines.push(popup_hints_line(
+                theme,
+                &[("↑/↓", "Move"), ("Enter", "Open"), ("Esc", "Close")],
+            ));
         }
 
         frame.render_widget(Clear, overlay);
         frame.render_widget(
-            Paragraph::new(Text::from(lines)).block(Self::panel_block(
-                "Views  ·  type to search",
-                true,
-                self.config.theme(),
-            )),
+            Paragraph::new(Text::from(lines)).block(Self::panel_block("Views", true, theme)),
             overlay,
         );
     }
@@ -730,7 +758,7 @@ impl Workspace {
                 break;
             }
             let label = truncate_to_width(
-                &format!("{} {}", view.value().icon(), view.descriptor().title()),
+                &format!("{}  {}", view.value().icon(), view.descriptor().title()),
                 usize::from(inner_width),
             );
             let text = format!(" {label} ");
@@ -741,9 +769,9 @@ impl Workspace {
                 break;
             }
             let item_area = Rect::new(x, area.y, width, 1);
-            let style = if self.focus == FocusArea::Navigation && Some(index) == self.tab_cursor {
+            let style = if Some(index) == self.selected {
                 self.config.theme().navigation_item_style(true)
-            } else if Some(index) == self.selected {
+            } else if self.focus == FocusArea::Navigation && Some(index) == self.tab_cursor {
                 self.config
                     .theme()
                     .header_style()
@@ -760,15 +788,17 @@ impl Workspace {
     fn render_content(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let Some(index) = self.selected else {
             let block = Self::panel_block(
-                "Workspace",
+                Line::default(),
                 self.focus == FocusArea::Content,
                 self.config.theme(),
             );
-            frame.render_widget(
-                Paragraph::new("No views are currently registered.")
-                    .block(block)
-                    .wrap(ratatui::widgets::Wrap { trim: true }),
-                area,
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            crate::render_empty_state(
+                frame,
+                inner,
+                "No views available",
+                "Register a view to begin.",
             );
             return;
         };
@@ -776,7 +806,7 @@ impl Workspace {
             return;
         };
         let block = Self::panel_block(
-            view.descriptor().title(),
+            Line::default(),
             self.focus == FocusArea::Content,
             self.config.theme(),
         );
@@ -861,7 +891,7 @@ impl Workspace {
         let mut bindings = self
             .selected
             .and_then(|index| self.views.get(index))
-            .map(|view| view.value().keybindings(FocusArea::Content))
+            .map(|view| view.value().keybindings(self.focus))
             .unwrap_or_default();
         let shell = shell_keybindings();
         let help = shell
@@ -869,7 +899,11 @@ impl Workspace {
             .find(|binding| binding.key() == "?")
             .cloned()
             .unwrap_or_else(|| crate::Keybinding::new("Help", "?"));
-        bindings.extend(shell.into_iter().filter(|binding| binding.key() != "?"));
+        bindings.extend(
+            shell
+                .into_iter()
+                .filter(|binding| binding.key() == "Ctrl+P"),
+        );
         bindings.sort_by_key(|binding| std::cmp::Reverse(binding.priority()));
 
         let mut visible = Vec::new();
@@ -938,7 +972,7 @@ impl Workspace {
         let view_bindings = self
             .selected
             .and_then(|index| self.views.get(index))
-            .map(|view| view.value().keybindings(FocusArea::Content))
+            .map(|view| view.value().keybindings(self.focus))
             .unwrap_or_default();
         let shell_bindings = shell_keybindings();
 
@@ -1063,7 +1097,10 @@ impl Workspace {
                 let title = view.descriptor().title();
                 let id = view.descriptor().id().clone();
                 PaletteEntry {
-                    label: format!("Go to {title}"),
+                    label: title.to_owned(),
+                    context: "View".to_owned(),
+                    description: view.descriptor().description().to_owned(),
+                    icon: view.value().icon(),
                     search_text: format!("{title} {} {}", view.descriptor().description(), id)
                         .to_lowercase(),
                     action: PaletteAction::SelectView(id),
@@ -1078,6 +1115,9 @@ impl Workspace {
                 .into_iter()
                 .map(move |action| PaletteEntry {
                     label: action.title().to_owned(),
+                    context: descriptor.title().to_owned(),
+                    description: action.description().to_owned(),
+                    icon: view.value().icon(),
                     search_text: format!(
                         "{} {} {} {}",
                         descriptor.title(),
@@ -1095,21 +1135,33 @@ impl Workspace {
         entries.extend([
             PaletteEntry {
                 label: "Toggle inspector".to_owned(),
-                search_text: "toggle inspector details".to_owned(),
+                context: "Workspace".to_owned(),
+                description: "Show details for the active view.".to_owned(),
+                icon: "◈",
+                search_text: "toggle inspector details show active view".to_owned(),
                 action: PaletteAction::ToggleInspector,
             },
             PaletteEntry {
                 label: "Toggle drawer".to_owned(),
-                search_text: "toggle drawer supplemental".to_owned(),
+                context: "Workspace".to_owned(),
+                description: "Open supplemental view content.".to_owned(),
+                icon: "◈",
+                search_text: "toggle drawer supplemental open view content".to_owned(),
                 action: PaletteAction::ToggleDrawer,
             },
             PaletteEntry {
                 label: "Show help".to_owned(),
+                context: "Workspace".to_owned(),
+                description: "Show available keyboard and mouse shortcuts.".to_owned(),
+                icon: "◈",
                 search_text: "show help keyboard shortcuts".to_owned(),
                 action: PaletteAction::ShowHelp,
             },
             PaletteEntry {
                 label: "Quit workspace".to_owned(),
+                context: "Workspace".to_owned(),
+                description: "Exit the workspace.".to_owned(),
+                icon: "◈",
                 search_text: "quit exit workspace".to_owned(),
                 action: PaletteAction::Quit,
             },
@@ -1176,52 +1228,84 @@ impl Workspace {
     }
 
     fn render_command_palette(&self, frame: &mut Frame<'_>, area: Rect) {
-        if area.width < 8 || area.height < 4 {
+        if area.width < 8 || area.height < 6 {
             return;
         }
         let entries = self.filtered_palette_entries();
-        let visible_count = entries
-            .len()
-            .min(8)
-            .min(area.height.saturating_sub(5) as usize);
         let width = area.width.saturating_sub(2).min(72);
-        let height = if entries.is_empty() {
-            4
+        let inner_height = usize::from(area.height.saturating_sub(4));
+        let show_detail = inner_height >= 3 && !entries.is_empty();
+        let show_hints = inner_height >= 4;
+        let visible_count = if entries.is_empty() {
+            0
         } else {
-            visible_count as u16 + 3
-        }
-        .min(area.height.saturating_sub(2));
+            entries.len().min(7).min(
+                inner_height
+                    .saturating_sub(1 + usize::from(show_detail) + usize::from(show_hints))
+                    .max(1),
+            )
+        };
+        let line_count = 1
+            + visible_count.max(usize::from(entries.is_empty()))
+            + usize::from(show_detail)
+            + usize::from(show_hints);
+        let height = (line_count as u16 + 2).min(area.height.saturating_sub(2));
         let overlay = Rect {
             x: area.x + (area.width.saturating_sub(width)) / 2,
             y: area.y + (area.height.saturating_sub(height)) / 2,
             width,
             height,
         };
-        let mut lines = vec![Line::from(format!(" > {}", self.palette_query))];
+        let theme = self.config.theme();
+        let inner_width = usize::from(width.saturating_sub(2));
+        let result_count = format!(
+            "{} {}",
+            entries.len(),
+            if entries.len() == 1 {
+                "action"
+            } else {
+                "actions"
+            }
+        );
+        let mut lines = vec![search_prompt_line(
+            " > ",
+            &self.palette_query,
+            &result_count,
+            inner_width,
+            theme,
+        )];
         if entries.is_empty() {
-            lines.push(Line::from("No matching actions"));
+            lines.push(Line::from("No matching actions").style(theme.muted_style()));
         } else {
             let start = self
                 .palette_selected
                 .saturating_sub(visible_count.saturating_sub(1));
             for (offset, entry) in entries.iter().skip(start).take(visible_count).enumerate() {
                 let index = start + offset;
-                let marker = if index == self.palette_selected {
-                    "> "
-                } else {
-                    "  "
-                };
-                lines.push(Line::from(format!("{marker}{}", entry.label)));
+                lines.push(palette_entry_line(
+                    entry,
+                    index == self.palette_selected,
+                    inner_width,
+                    theme,
+                ));
             }
+            if show_detail && let Some(entry) = entries.get(self.palette_selected) {
+                lines.push(
+                    Line::from(truncate_to_width(&entry.description, inner_width))
+                        .style(theme.muted_style()),
+                );
+            }
+        }
+        if show_hints {
+            lines.push(popup_hints_line(
+                theme,
+                &[("↑/↓", "Move"), ("Enter", "Select"), ("Esc", "Close")],
+            ));
         }
         frame.render_widget(Clear, overlay);
         frame.render_widget(
             Paragraph::new(Text::from(lines))
-                .block(Self::panel_block(
-                    "Commands · Enter · Esc",
-                    true,
-                    self.config.theme(),
-                ))
+                .block(Self::panel_block("Commands", true, theme))
                 .wrap(ratatui::widgets::Wrap { trim: true }),
             overlay,
         );
@@ -1409,7 +1493,7 @@ fn shell_keybindings() -> Vec<crate::Keybinding> {
         crate::Keybinding::new("Focus", "Tab").with_priority(30),
         crate::Keybinding::new("Details", "i").with_priority(20),
         crate::Keybinding::new("Side", "d").with_priority(15),
-        crate::Keybinding::new("Commands", "Ctrl+P").with_priority(50),
+        crate::Keybinding::new("Commands", "Ctrl+P").with_priority(30),
         crate::Keybinding::new("Help", "?").with_priority(u8::MAX),
         crate::Keybinding::new("Quit", "q").with_priority(10),
     ]
@@ -1421,6 +1505,123 @@ fn widest_key_label(bindings: &[crate::Keybinding]) -> usize {
         .map(|binding| Line::from(format!("[{}]", binding.key())).width())
         .max()
         .unwrap_or(5)
+}
+
+fn search_prompt_line(
+    prefix: &str,
+    query: &str,
+    count: &str,
+    width: usize,
+    theme: ThemePreset,
+) -> Line<'static> {
+    let prefix_width = Line::from(prefix).width();
+    let count_width = Line::from(count).width();
+    let query_width = width.saturating_sub(prefix_width + count_width + 1);
+    let query = truncate_to_width(query, query_width);
+    let query_line_width = prefix_width + Line::from(query.as_str()).width();
+    let padding = width.saturating_sub(query_line_width + count_width);
+    Line::from(vec![
+        Span::styled(prefix.to_owned(), theme.header_style()),
+        Span::raw(query),
+        Span::raw(" ".repeat(padding)),
+        Span::styled(count.to_owned(), theme.muted_style()),
+    ])
+}
+
+fn popup_hints_line(theme: ThemePreset, hints: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = Vec::with_capacity(hints.len() * 3);
+    for (index, (key, action)) in hints.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("   "));
+        }
+        spans.push(Span::styled((*key).to_owned(), theme.header_style()));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled((*action).to_owned(), theme.muted_style()));
+    }
+    Line::from(spans)
+}
+
+fn palette_entry_line(
+    entry: &PaletteEntry,
+    selected: bool,
+    width: usize,
+    theme: ThemePreset,
+) -> Line<'static> {
+    let selected_style = theme.navigation_item_style(true);
+    let marker = if selected { "›" } else { " " };
+    let prefix_width = Line::from(format!("{marker} {} ", entry.icon)).width();
+    let context_width = Line::from(entry.context.as_str()).width();
+    let label_width = width
+        .saturating_sub(prefix_width + context_width + 2)
+        .max(1);
+    let label = truncate_to_width(&entry.label, label_width);
+    let used_width = prefix_width + Line::from(label.as_str()).width();
+    let context_fits = used_width + context_width + 2 <= width;
+    let gap = if context_fits {
+        width.saturating_sub(used_width + context_width)
+    } else {
+        0
+    };
+    let filler = if context_fits {
+        0
+    } else {
+        width.saturating_sub(used_width)
+    };
+
+    let mut spans = vec![
+        Span::styled(
+            format!("{marker} "),
+            if selected {
+                selected_style
+            } else {
+                theme.accent_style()
+            },
+        ),
+        Span::styled(
+            format!("{} ", entry.icon),
+            if selected {
+                selected_style
+            } else {
+                theme.header_style()
+            },
+        ),
+        Span::styled(
+            label,
+            if selected {
+                selected_style
+            } else {
+                ratatui::style::Style::default()
+            },
+        ),
+    ];
+    if context_fits {
+        spans.push(Span::styled(
+            " ".repeat(gap),
+            if selected {
+                selected_style
+            } else {
+                ratatui::style::Style::default()
+            },
+        ));
+        spans.push(Span::styled(
+            entry.context.clone(),
+            if selected {
+                selected_style
+            } else {
+                theme.muted_style()
+            },
+        ));
+    } else {
+        spans.push(Span::styled(
+            " ".repeat(filler),
+            if selected {
+                selected_style
+            } else {
+                ratatui::style::Style::default()
+            },
+        ));
+    }
+    Line::from(spans)
 }
 
 fn footer_item_text(key: &str, action: &str) -> String {

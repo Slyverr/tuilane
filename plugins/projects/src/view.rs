@@ -12,7 +12,7 @@ use tuilane_plugin_api::projects::{
     Project, ProjectCommand, ProjectCommandResult, ProjectId, ProjectTitle, ProjectsChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
 
 enum InputMode {
     Title {
@@ -160,26 +160,24 @@ impl ProjectsView {
     }
 
     fn project_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from("c create  e rename  Delete remove  ↑/↓ select")];
-        if self.projects.is_empty() {
-            lines.push(Line::from("No projects yet. Press c to create one."));
-        } else {
-            lines.extend(self.projects.iter().enumerate().map(|(index, project)| {
+        let mut lines = self
+            .projects
+            .iter()
+            .enumerate()
+            .map(|(index, project)| {
                 let marker = if Some(index) == self.selected {
                     "> "
                 } else {
                     "  "
                 };
                 Line::from(format!("{marker}{}", project.title()))
-            }));
-        }
+            })
+            .collect::<Vec<_>>();
         if let Some(InputMode::Title { value, .. }) = &self.input_mode {
             lines.push(Line::from(format!("Project title: {value}_")));
         }
         if matches!(self.input_mode, Some(InputMode::ConfirmDelete(_))) {
-            lines.push(Line::from(
-                "Delete project? Press y to confirm or Esc to cancel.",
-            ));
+            lines.push(Line::from("Delete this project?"));
         }
         if let Some(status) = &self.status {
             lines.push(Line::from(status.clone()));
@@ -199,10 +197,19 @@ impl View for ProjectsView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        frame.render_widget(
-            Paragraph::new(self.project_lines()).wrap(Wrap { trim: true }),
-            area,
-        );
+        if self.projects.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+            render_empty_state(
+                frame,
+                area,
+                "No projects yet",
+                "Create a project to group related work.",
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(self.project_lines()).wrap(Wrap { trim: true }),
+                area,
+            );
+        }
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {
@@ -317,10 +324,10 @@ impl View for ProjectsView {
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move", "↑/↓, j/k"),
-                Keybinding::new("Create", "c"),
-                Keybinding::new("Edit", "e"),
-                Keybinding::new("Delete", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k").with_priority(10),
+                Keybinding::new("Create", "c").with_priority(90),
+                Keybinding::new("Edit", "e").with_priority(80),
+                Keybinding::new("Delete", "Delete").with_priority(60),
             ],
         }
     }

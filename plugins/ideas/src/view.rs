@@ -12,7 +12,7 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
 
 enum InputMode {
     Title { id: Option<IdeaId>, value: String },
@@ -150,19 +150,19 @@ impl IdeasView {
     }
 
     fn lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from("c capture  e rename  Delete remove  ↑/↓ select")];
-        if self.ideas.is_empty() {
-            lines.push(Line::from("No ideas yet. Press c to capture one."));
-        } else {
-            lines.extend(self.ideas.iter().enumerate().map(|(index, idea)| {
+        let mut lines = self
+            .ideas
+            .iter()
+            .enumerate()
+            .map(|(index, idea)| {
                 let marker = if Some(index) == self.selected {
                     "> "
                 } else {
                     "  "
                 };
                 Line::from(format!("{marker}{}", idea.title()))
-            }));
-        }
+            })
+            .collect::<Vec<_>>();
 
         if let Some(idea) = self.selected_idea() {
             lines.push(Line::from(format!("\n# {}", idea.title())));
@@ -173,9 +173,7 @@ impl IdeasView {
             lines.push(Line::from(format!("Idea title: {value}_")));
         }
         if matches!(self.input_mode, Some(InputMode::ConfirmDelete(_))) {
-            lines.push(Line::from(
-                "Delete idea? Press y to confirm or Esc to cancel.",
-            ));
+            lines.push(Line::from("Delete this idea?"));
         }
         if let Some(status) = &self.status {
             lines.push(Line::from(status.clone()));
@@ -195,7 +193,16 @@ impl View for IdeasView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+        if self.ideas.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+            render_empty_state(
+                frame,
+                area,
+                "No ideas yet",
+                "Capture an idea when it comes to mind.",
+            );
+        } else {
+            frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
+        }
     }
 
     fn command_palette_actions(&self) -> Vec<ViewAction> {
@@ -307,10 +314,10 @@ impl View for IdeasView {
                 Keybinding::new("Cancel", "n / Esc"),
             ],
             None => vec![
-                Keybinding::new("Move", "↑/↓, j/k"),
-                Keybinding::new("Capture", "c"),
-                Keybinding::new("Rename", "e"),
-                Keybinding::new("Delete", "Delete"),
+                Keybinding::new("Move", "↑/↓, j/k").with_priority(10),
+                Keybinding::new("Capture", "c").with_priority(90),
+                Keybinding::new("Rename", "e").with_priority(80),
+                Keybinding::new("Delete", "Delete").with_priority(60),
             ],
         }
     }
