@@ -13,7 +13,7 @@ use tuilane_plugin_api::tasks::{
     Task, TaskCommand, TaskCommandResult, TaskDate, TaskId, TaskTitle,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
 
 enum InputMode {
     Title { action: TitleAction, value: String },
@@ -211,37 +211,6 @@ impl TasksView {
             ]));
         }
 
-        match &self.input_mode {
-            Some(InputMode::Title {
-                action: TitleAction::Create,
-                value,
-            }) => {
-                lines.push(Line::from(format!("New task: {value}_")));
-            }
-            Some(InputMode::Title {
-                action: TitleAction::Rename(_),
-                value,
-            }) => {
-                lines.push(Line::from(format!("New title: {value}_")));
-            }
-            Some(InputMode::DueDate { value, .. }) => {
-                lines.push(Line::from(format!(
-                    "Due date (YYYY-MM-DD, blank clears): {value}_"
-                )));
-            }
-            Some(InputMode::ConfirmDelete(id)) => {
-                let title = self
-                    .tasks
-                    .iter()
-                    .find(|task| task.id() == id)
-                    .map_or("this task", |task| task.title().as_str());
-                lines.push(Line::from(format!("Delete '{title}'?")));
-            }
-            None => {}
-        }
-        if let Some(status) = &self.status {
-            lines.push(Line::from(status.clone()));
-        }
         lines
     }
 }
@@ -257,7 +226,7 @@ impl View for TasksView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        if self.tasks.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+        if self.tasks.is_empty() && self.input_mode.is_none() {
             render_empty_state(
                 frame,
                 area,
@@ -292,6 +261,54 @@ impl View for TasksView {
         true
     }
 
+    fn dialog(&self) -> Option<ViewDialog> {
+        match self.input_mode.as_ref()? {
+            InputMode::Title {
+                action: TitleAction::Create,
+                value,
+            } => Some(ViewDialog::Input {
+                title: "New task".to_owned(),
+                label: "Task title".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::Title {
+                action: TitleAction::Rename(_),
+                value,
+            } => Some(ViewDialog::Input {
+                title: "Rename task".to_owned(),
+                label: "Task title".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::DueDate { value, .. } => Some(ViewDialog::Input {
+                title: "Set due date".to_owned(),
+                label: "Date (YYYY-MM-DD; blank clears)".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::ConfirmDelete(id) => {
+                let title = self
+                    .tasks
+                    .iter()
+                    .find(|task| task.id() == id)
+                    .map_or("this task", |task| task.title().as_str());
+                Some(ViewDialog::Confirm {
+                    title: "Delete task".to_owned(),
+                    message: format!("Delete '{title}'?"),
+                })
+            }
+        }
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        if self.input_mode.is_some() {
+            None
+        } else {
+            self.status.take()
+        }
+    }
+
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {
         if self.input_mode.is_none() && focus != FocusArea::Content {
             return false;
@@ -300,9 +317,10 @@ impl View for TasksView {
             match mode {
                 InputMode::Title { action, mut value } => {
                     match key.code {
-                        KeyCode::Esc => self.status = Some("Edit cancelled.".to_owned()),
+                        KeyCode::Esc => {}
                         KeyCode::Enter => self.finish_text_input(action, value),
                         KeyCode::Backspace => {
+                            self.status = None;
                             value.pop();
                             self.input_mode = Some(InputMode::Title { action, value });
                         }
@@ -311,6 +329,7 @@ impl View for TasksView {
                                 KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                             ) =>
                         {
+                            self.status = None;
                             value.push(character);
                             self.input_mode = Some(InputMode::Title { action, value });
                         }
@@ -320,9 +339,10 @@ impl View for TasksView {
                 }
                 InputMode::DueDate { id, mut value } => {
                     match key.code {
-                        KeyCode::Esc => self.status = Some("Edit cancelled.".to_owned()),
+                        KeyCode::Esc => {}
                         KeyCode::Enter => self.finish_due_date_input(id, value),
                         KeyCode::Backspace => {
+                            self.status = None;
                             value.pop();
                             self.input_mode = Some(InputMode::DueDate { id, value });
                         }
@@ -331,6 +351,7 @@ impl View for TasksView {
                                 KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                             ) =>
                         {
+                            self.status = None;
                             value.push(character);
                             self.input_mode = Some(InputMode::DueDate { id, value });
                         }
@@ -341,7 +362,7 @@ impl View for TasksView {
                 InputMode::ConfirmDelete(id) => {
                     match key.code {
                         KeyCode::Esc | KeyCode::Char('n') => {
-                            self.status = Some("Deletion cancelled.".to_owned());
+                            self.status = None;
                         }
                         KeyCode::Char('y') => self.run_command(TaskCommand::Delete { id }, |_| {
                             "Deleted task.".to_owned()
@@ -407,6 +428,11 @@ impl View for TasksView {
                     }
                     true
                 }
+                KeyCode::F(5) => {
+                    self.status = None;
+                    self.dirty = true;
+                    true
+                }
                 KeyCode::Up => {
                     self.move_selection(-1);
                     true
@@ -445,6 +471,7 @@ impl View for TasksView {
                 Keybinding::new("Due", "u").with_priority(70),
                 Keybinding::new("Complete", "x").with_priority(60),
                 Keybinding::new("Delete", "Delete").with_priority(50),
+                Keybinding::new("Refresh", "F5").with_priority(5),
             ],
         }
     }

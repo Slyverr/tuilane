@@ -187,7 +187,7 @@ impl View for CalendarView {
         }
 
         vec![
-            Keybinding::new("Day", "←/→").with_priority(10),
+            Keybinding::new("Day", "←/→, h/l").with_priority(10),
             Keybinding::new("Week", "↑/↓, j/k").with_priority(10),
             Keybinding::new("Month", "PgUp/PgDn").with_priority(10),
             Keybinding::new("Today", "t").with_priority(90),
@@ -207,8 +207,12 @@ impl View for CalendarView {
         }
 
         let selected = match key.code {
-            KeyCode::Left => self.selected_date.checked_sub_days(Days::new(1)),
-            KeyCode::Right => self.selected_date.checked_add_days(Days::new(1)),
+            KeyCode::Left | KeyCode::Char('h') if key.modifiers.is_empty() => {
+                self.selected_date.checked_sub_days(Days::new(1))
+            }
+            KeyCode::Right | KeyCode::Char('l') if key.modifiers.is_empty() => {
+                self.selected_date.checked_add_days(Days::new(1))
+            }
             KeyCode::Up => self.selected_date.checked_sub_days(Days::new(7)),
             KeyCode::Down => self.selected_date.checked_add_days(Days::new(7)),
             KeyCode::PageUp => self.selected_date.checked_sub_months(Months::new(1)),

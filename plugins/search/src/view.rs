@@ -14,7 +14,7 @@ use tuilane_plugin_api::search::{
     SearchCommandResult, SearchQuery, SearchResult,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
 
 /// Search workspace items through the shared host command path.
 pub struct SearchView {
@@ -231,70 +231,66 @@ impl View for SearchView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        if self.status.is_none() && !self.saving_name {
-            if self.saved_searches_open && self.saved_searches.is_empty() {
+        if self.saved_searches_open && self.saved_searches.is_empty() {
+            render_empty_state(
+                frame,
+                area,
+                "No saved searches",
+                "Save a search from Commands to keep it for later.",
+            );
+            return;
+        }
+
+        if !self.saved_searches_open && self.results.is_empty() {
+            if self.query.is_empty() && !self.editing {
                 render_empty_state(
                     frame,
                     area,
-                    "No saved searches",
-                    "Save a search from Commands to keep it for later.",
+                    "Search your workspace",
+                    "Find tasks, projects, notes, and ideas by their content.",
                 );
                 return;
             }
 
-            if !self.saved_searches_open && self.results.is_empty() {
-                if self.query.is_empty() && !self.editing {
-                    render_empty_state(
-                        frame,
-                        area,
-                        "Search your workspace",
-                        "Find tasks, projects, notes, and ideas by their content.",
-                    );
-                    return;
-                }
-
-                let header_lines = if self.editing {
-                    vec![Line::from(format!("/{}_", self.query))]
+            let header_lines = if self.editing {
+                vec![Line::from(format!("/{}_", self.query))]
+            } else {
+                vec![
+                    Line::from(format!("Query: {}", self.query)),
+                    Line::from(format!(
+                        "Filter: {}",
+                        self.kind.as_deref().unwrap_or("all items")
+                    )),
+                ]
+            };
+            let header_height = header_lines.len() as u16;
+            frame.render_widget(
+                Paragraph::new(header_lines),
+                Rect::new(area.x, area.y, area.width, header_height.min(area.height)),
+            );
+            render_empty_state(
+                frame,
+                Rect::new(
+                    area.x,
+                    area.y.saturating_add(header_height),
+                    area.width,
+                    area.height.saturating_sub(header_height),
+                ),
+                if self.editing {
+                    "Keep typing"
                 } else {
-                    vec![
-                        Line::from(format!("Query: {}", self.query)),
-                        Line::from(format!(
-                            "Filter: {}",
-                            self.kind.as_deref().unwrap_or("all items")
-                        )),
-                    ]
-                };
-                let header_height = header_lines.len() as u16;
-                frame.render_widget(
-                    Paragraph::new(header_lines),
-                    Rect::new(area.x, area.y, area.width, header_height.min(area.height)),
-                );
-                render_empty_state(
-                    frame,
-                    Rect::new(
-                        area.x,
-                        area.y.saturating_add(header_height),
-                        area.width,
-                        area.height.saturating_sub(header_height),
-                    ),
-                    if self.editing {
-                        "Keep typing"
-                    } else {
-                        "No matches"
-                    },
-                    if self.editing {
-                        "Search results will appear here."
-                    } else {
-                        "Try a different search or item filter."
-                    },
-                );
-                return;
-            }
+                    "No matches"
+                },
+                if self.editing {
+                    "Search results will appear here."
+                } else {
+                    "Try a different search or item filter."
+                },
+            );
+            return;
         }
 
-        let mut lines = if self.saving_name {
-            vec![Line::from(format!("Save search as: {}_", self.save_name))]
-        } else if self.saved_searches_open {
+        let lines = if self.saved_searches_open {
             let mut lines = vec![Line::from("Saved searches")];
             if self.saved_searches.is_empty() {
                 lines.push(Line::from(
@@ -338,9 +334,6 @@ impl View for SearchView {
             lines.extend(self.result_lines());
             lines
         };
-        if let Some(status) = &self.status {
-            lines.push(Line::from(status.clone()));
-        }
         frame.render_widget(
             Paragraph::new(lines)
                 .style(Style::default())
@@ -358,10 +351,11 @@ impl View for SearchView {
                 KeyCode::Esc => {
                     self.saving_name = false;
                     self.save_name.clear();
-                    self.status = Some("Saving search cancelled.".to_owned());
+                    self.status = None;
                 }
                 KeyCode::Enter => self.save_current_search(),
                 KeyCode::Backspace => {
+                    self.status = None;
                     self.save_name.pop();
                 }
                 KeyCode::Char(character)
@@ -369,6 +363,7 @@ impl View for SearchView {
                         KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                     ) && self.save_name.chars().count() < 64 =>
                 {
+                    self.status = None;
                     self.save_name.push(character);
                 }
                 _ => {}
@@ -481,6 +476,23 @@ impl View for SearchView {
             _ => return false,
         }
         true
+    }
+
+    fn dialog(&self) -> Option<ViewDialog> {
+        self.saving_name.then(|| ViewDialog::Input {
+            title: "Save search".to_owned(),
+            label: "Name".to_owned(),
+            value: self.save_name.clone(),
+            error: self.status.clone(),
+        })
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        if self.saving_name {
+            None
+        } else {
+            self.status.take()
+        }
     }
 
     fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) -> bool {

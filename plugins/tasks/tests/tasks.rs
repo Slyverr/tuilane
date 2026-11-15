@@ -770,13 +770,26 @@ fn task_view_routes_create_due_date_completion_and_delete_commands() {
         .register_view(TasksView::new(commands.clone()))
         .expect("register task view");
 
+    workspace.handle_key(key(KeyCode::Char('c')));
+    let create_dialog = render_text(&mut workspace);
+    assert!(create_dialog.contains("New task"));
+    assert!(create_dialog.contains("Task title"));
+    assert!(!create_dialog.contains("New task:"));
+    workspace.handle_key(key(KeyCode::Esc));
+    let cancelled = render_text(&mut workspace);
+    assert!(!cancelled.contains("Edit cancelled."));
+    assert!(!cancelled.contains("Task title"));
+
     activate_palette_action(&mut workspace, "Create task");
+    assert!(render_text(&mut workspace).contains("New task"));
     for character in "write q".chars() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
     workspace.handle_key(key(KeyCode::Enter));
     assert!(!workspace.should_quit());
-    assert!(render_text(&mut workspace).contains("write q"));
+    let created = render_text(&mut workspace);
+    assert!(created.contains("write q"));
+    assert!(created.contains("Created write q"));
 
     workspace.handle_key(key(KeyCode::Char('u')));
     for character in "2026-11-20".chars() {

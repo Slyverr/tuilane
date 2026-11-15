@@ -91,10 +91,14 @@ fn calendar_does_not_consume_date_keys_outside_content_focus() {
 }
 
 #[test]
-fn vi_navigation_keys_remain_available_to_the_workspace_shell() {
+fn vi_navigation_keys_move_between_calendar_days() {
     let mut calendar = calendar(date(2024, 2, 28));
 
-    assert!(!calendar.handle_key(key(KeyCode::Char('h')), FocusArea::Content));
+    assert!(calendar.handle_key(key(KeyCode::Char('h')), FocusArea::Content));
+    assert_eq!(calendar.selected_date(), date(2024, 2, 27));
+
+    assert!(calendar.handle_key(key(KeyCode::Char('l')), FocusArea::Content));
+    assert_eq!(calendar.selected_date(), date(2024, 2, 28));
 }
 
 #[test]

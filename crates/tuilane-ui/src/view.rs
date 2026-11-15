@@ -85,6 +85,29 @@ pub struct ViewAction {
     description: Box<str>,
 }
 
+/// A host-rendered dialog contributed by the active view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewDialog {
+    /// Requests one text value from the user.
+    Input {
+        /// Short dialog title.
+        title: String,
+        /// Label describing the value being entered.
+        label: String,
+        /// Current editable value.
+        value: String,
+        /// Validation feedback shown while the dialog remains open.
+        error: Option<String>,
+    },
+    /// Requests confirmation before a destructive action.
+    Confirm {
+        /// Short dialog title.
+        title: String,
+        /// Confirmation question or target description.
+        message: String,
+    },
+}
+
 impl ViewAction {
     /// Creates an action with a stable view-local identifier and searchable label.
     pub fn new(
@@ -147,6 +170,16 @@ pub trait View {
     /// an action so the footer and help describe the controls that currently work.
     fn keybindings(&self, _focus: super::FocusArea) -> Vec<Keybinding> {
         Vec::new()
+    }
+
+    /// Returns a modal dialog for the host to render over the workspace.
+    fn dialog(&self) -> Option<ViewDialog> {
+        None
+    }
+
+    /// Transfers one user-facing notification to the host shell.
+    fn take_notification(&mut self) -> Option<String> {
+        None
     }
 
     /// Renders contextual details when the inspector is open.

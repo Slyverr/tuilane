@@ -12,7 +12,7 @@ use tuilane_plugin_api::notes::{
     Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle, NotesChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
 
 enum InputMode {
     Title { id: Option<NoteId>, value: String },
@@ -84,7 +84,6 @@ impl NotesView {
             }
             Ok(_) => self.status = Some("Note list returned an unexpected response.".to_owned()),
             Err(error) => {
-                self.dirty.set(true);
                 self.status = Some(error);
             }
         }
@@ -183,15 +182,6 @@ impl NotesView {
             }
         }
 
-        if let Some(InputMode::Title { value, .. }) = &self.input_mode {
-            lines.push(Line::from(format!("Note title: {value}_")));
-        }
-        if matches!(self.input_mode, Some(InputMode::ConfirmDelete(_))) {
-            lines.push(Line::from("Delete this note?"));
-        }
-        if let Some(status) = &self.status {
-            lines.push(Line::from(status.clone()));
-        }
         lines
     }
 }
@@ -207,7 +197,7 @@ impl View for NotesView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        if self.notes.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+        if self.notes.is_empty() && self.input_mode.is_none() {
             render_empty_state(
                 frame,
                 area,
@@ -242,6 +232,40 @@ impl View for NotesView {
         true
     }
 
+    fn dialog(&self) -> Option<ViewDialog> {
+        match self.input_mode.as_ref()? {
+            InputMode::Title { id, value } => Some(ViewDialog::Input {
+                title: if id.is_some() {
+                    "Rename note".to_owned()
+                } else {
+                    "New note".to_owned()
+                },
+                label: "Note title".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::ConfirmDelete(id) => {
+                let title = self
+                    .notes
+                    .iter()
+                    .find(|note| note.id() == id)
+                    .map_or("this note", |note| note.title().as_str());
+                Some(ViewDialog::Confirm {
+                    title: "Delete note".to_owned(),
+                    message: format!("Delete '{title}'?"),
+                })
+            }
+        }
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        if self.input_mode.is_some() {
+            None
+        } else {
+            self.status.take()
+        }
+    }
+
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {
         if self.input_mode.is_none() && focus != FocusArea::Content {
             return false;
@@ -249,9 +273,10 @@ impl View for NotesView {
         if let Some(mode) = self.input_mode.take() {
             match mode {
                 InputMode::Title { id, mut value } => match key.code {
-                    KeyCode::Esc => self.status = Some("Edit cancelled.".to_owned()),
+                    KeyCode::Esc => {}
                     KeyCode::Enter => self.finish_title_input(id, value),
                     KeyCode::Backspace => {
+                        self.status = None;
                         value.pop();
                         self.input_mode = Some(InputMode::Title { id, value });
                     }
@@ -260,6 +285,7 @@ impl View for NotesView {
                             KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                         ) =>
                     {
+                        self.status = None;
                         value.push(character);
                         self.input_mode = Some(InputMode::Title { id, value });
                     }
@@ -267,7 +293,7 @@ impl View for NotesView {
                 },
                 InputMode::ConfirmDelete(id) => match key.code {
                     KeyCode::Esc | KeyCode::Char('n') => {
-                        self.status = Some("Delete cancelled.".to_owned());
+                        self.status = None;
                     }
                     KeyCode::Char('y') => {
                         self.run_command(NoteCommand::Delete { id }, |response| match response {
@@ -313,6 +339,11 @@ impl View for NotesView {
                 }
                 true
             }
+            KeyCode::F(5) => {
+                self.status = None;
+                self.dirty.set(true);
+                true
+            }
             KeyCode::Up => {
                 self.move_selection(-1);
                 true
@@ -345,6 +376,7 @@ impl View for NotesView {
                 Keybinding::new("Rename", "e").with_priority(80),
                 Keybinding::new("Edit", "m").with_priority(70),
                 Keybinding::new("Delete", "Delete").with_priority(60),
+                Keybinding::new("Refresh", "F5").with_priority(5),
             ],
         }
     }

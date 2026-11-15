@@ -1,4 +1,7 @@
-use std::{io, time::Duration};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -7,17 +10,19 @@ use crossterm::event::{
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
 use tuilane_core::{DuplicateViewId, ViewRegistry};
 use tuilane_plugin_api::ViewId;
 
-use crate::{LayoutPreset, ThemePreset, View, WorkspaceConfig, icons};
+use crate::{LayoutPreset, ThemePreset, View, ViewDialog, WorkspaceConfig, icons};
 
 const TAB_ROW_HEIGHT: u16 = 1;
 const SIDE_PANEL_WIDTH: u16 = 34;
 const MIN_MAIN_WIDTH: u16 = 36;
+const NOTIFICATION_DURATION: Duration = Duration::from_secs(3);
 
 /// The shell region currently receiving keyboard navigation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -65,6 +70,7 @@ pub struct Workspace {
     palette_query: String,
     palette_selected: usize,
     should_quit: bool,
+    notification: Option<WorkspaceNotification>,
     config: WorkspaceConfig,
     last_layout: ShellLayout,
     last_regions: ShellRects,
@@ -93,6 +99,11 @@ struct PaletteEntry {
     action: PaletteAction,
 }
 
+struct WorkspaceNotification {
+    message: String,
+    expires_at: Instant,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct ShellLayout {
     inspector: bool,
@@ -117,6 +128,7 @@ impl Default for Workspace {
             palette_query: String::new(),
             palette_selected: 0,
             should_quit: false,
+            notification: None,
             config: WorkspaceConfig::default(),
             last_layout: ShellLayout::default(),
             last_regions: ShellRects::default(),
@@ -269,11 +281,13 @@ impl Workspace {
 
         if self.palette_open {
             self.handle_palette_key(key);
+            self.capture_notification();
             return;
         }
 
         if self.switcher_open {
             self.handle_switcher_key(key);
+            self.capture_notification();
             return;
         }
 
@@ -302,6 +316,7 @@ impl Workspace {
             .selected
             .and_then(|index| self.views.get_mut(index))
             .is_some_and(|view| view.value_mut().handle_key(key, self.focus));
+        self.capture_notification();
         if view_consumed {
             return;
         }
@@ -328,7 +343,7 @@ impl Workspace {
             }
         }
 
-        if is_shift_tab_key(key) {
+        if is_shift_view_switch_key(key) {
             let forward = matches!(key.code, KeyCode::Char('l' | 'L'));
             if self.focus == FocusArea::Navigation {
                 self.move_tab_cursor(forward);
@@ -370,8 +385,6 @@ impl Workspace {
             KeyCode::Esc => self.focus = FocusArea::Content,
             KeyCode::Char('i') => self.toggle_inspector(),
             KeyCode::Char('d') => self.toggle_drawer(),
-            KeyCode::Tab => self.advance_focus(false),
-            KeyCode::BackTab => self.advance_focus(true),
             _ => {}
         }
     }
@@ -697,6 +710,7 @@ impl Workspace {
 
     /// Draws the responsive workspace shell and its registered contributions.
     pub fn render(&mut self, frame: &mut Frame<'_>) {
+        self.expire_notification();
         let area = frame.area();
         let footer = self.footer_line(usize::from(area.width));
         let layout = Self::layout(
@@ -713,6 +727,7 @@ impl Workspace {
         self.ensure_tab_visible(layout.tabs.width);
         self.render_tabs(frame, layout.tabs);
         self.render_content(frame, layout.main);
+        self.capture_notification();
         if let Some(inspector) = layout.inspector {
             self.render_inspector(frame, inspector);
         }
@@ -720,6 +735,13 @@ impl Workspace {
             self.render_drawer(frame, drawer);
         }
         frame.render_widget(Paragraph::new(footer), layout.status);
+
+        if !self.help_open && !self.palette_open && !self.switcher_open {
+            if self.render_view_dialog(frame, area) {
+                return;
+            }
+            self.render_notification(frame, area);
+        }
 
         if self.help_open {
             self.render_help(frame, area);
@@ -816,6 +838,154 @@ impl Workspace {
         let inner = block.inner(area);
         frame.render_widget(block, area);
         view.value_mut().render(frame, inner);
+    }
+
+    fn render_view_dialog(&self, frame: &mut Frame<'_>, area: Rect) -> bool {
+        let Some(dialog) = self
+            .selected
+            .and_then(|index| self.views.get(index))
+            .and_then(|view| view.value().dialog())
+        else {
+            return false;
+        };
+        let keybindings = self
+            .selected
+            .and_then(|index| self.views.get(index))
+            .map(|view| view.value().keybindings(self.focus))
+            .unwrap_or_default();
+
+        let theme = self.config.theme();
+        let width = area.width.saturating_sub(2).min(72);
+        if width < 10 || area.height < 3 {
+            return true;
+        }
+
+        let (title, mut lines, height) = match dialog {
+            ViewDialog::Input {
+                title,
+                label,
+                value,
+                error,
+            } => {
+                let mut lines = vec![
+                    Line::from(label).style(theme.header_style()),
+                    Line::from(format!(
+                        "› {}▏",
+                        truncate_input_preview(&value, usize::from(width.saturating_sub(5)))
+                    ))
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
+                ];
+                let has_error = error.is_some();
+                if let Some(error) = error {
+                    lines.push(Line::from(error).style(Style::default().fg(Color::Red)));
+                }
+                (title, lines, if has_error { 7 } else { 6 })
+            }
+            ViewDialog::Confirm { title, message } => (
+                title,
+                vec![Line::from(message).style(theme.panel_style(true))],
+                5,
+            ),
+        };
+        let hints = keybindings
+            .iter()
+            .map(|binding| format!("[{}] {}", binding.key(), binding.action()))
+            .collect::<Vec<_>>()
+            .join("   ");
+        if !hints.is_empty() {
+            lines.push(
+                Line::from(truncate_to_width(
+                    &hints,
+                    usize::from(width.saturating_sub(4)),
+                ))
+                .style(theme.muted_style()),
+            );
+        }
+
+        let height = height.min(area.height.saturating_sub(2));
+        if height < 3 {
+            return true;
+        }
+        let overlay = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        };
+        frame.render_widget(Clear, overlay);
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .wrap(Wrap { trim: true })
+                .block(Self::panel_block(title, true, theme)),
+            overlay,
+        );
+        true
+    }
+
+    fn render_notification(&self, frame: &mut Frame<'_>, area: Rect) {
+        let Some(notification) = self
+            .notification
+            .as_ref()
+            .filter(|notification| notification.expires_at > Instant::now())
+        else {
+            return;
+        };
+        let width = area.width.saturating_sub(4).min(72);
+        let height = 3;
+        if width < 12 || area.height < height + 2 {
+            return;
+        }
+        let overlay = Rect {
+            x: area.x + area.width.saturating_sub(width) - 2,
+            y: area.y + area.height.saturating_sub(height + 1),
+            width,
+            height,
+        };
+        let message =
+            truncate_to_width(&notification.message, usize::from(width.saturating_sub(4)));
+        frame.render_widget(Clear, overlay);
+        frame.render_widget(
+            Paragraph::new(Line::from(message).style(self.config.theme().header_style()))
+                .block(Self::panel_block("Notice", true, self.config.theme())),
+            overlay,
+        );
+    }
+
+    fn capture_notification(&mut self) {
+        let notification = self
+            .selected
+            .and_then(|index| self.views.get_mut(index))
+            .and_then(|view| view.value_mut().take_notification());
+        if let Some(message) = notification {
+            self.notification = Some(WorkspaceNotification {
+                message,
+                expires_at: Instant::now() + NOTIFICATION_DURATION,
+            });
+        }
+    }
+
+    fn notification_timeout(&self) -> Option<Duration> {
+        self.notification
+            .as_ref()
+            .map(|notification| {
+                notification
+                    .expires_at
+                    .saturating_duration_since(Instant::now())
+            })
+            .filter(|remaining| !remaining.is_zero())
+    }
+
+    fn expire_notification(&mut self) -> bool {
+        if self
+            .notification
+            .as_ref()
+            .is_some_and(|notification| notification.expires_at <= Instant::now())
+        {
+            self.notification = None;
+            true
+        } else {
+            false
+        }
     }
 
     fn render_inspector(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -1378,31 +1548,6 @@ impl Workspace {
         }
     }
 
-    fn advance_focus(&mut self, backwards: bool) {
-        let mut order = Vec::with_capacity(4);
-        order.push(FocusArea::Navigation);
-        order.push(FocusArea::Content);
-        if self.inspector_open && self.last_layout.inspector {
-            order.push(FocusArea::Inspector);
-        }
-        if self.drawer_open && self.last_layout.drawer {
-            order.push(FocusArea::Drawer);
-        }
-        let current = order
-            .iter()
-            .position(|focus| *focus == self.focus)
-            .unwrap_or(0);
-        let next = if backwards {
-            (current + order.len() - 1) % order.len()
-        } else {
-            (current + 1) % order.len()
-        };
-        if self.focus == FocusArea::Navigation && order[next] != FocusArea::Navigation {
-            self.tab_cursor = self.selected;
-        }
-        self.focus = order[next];
-    }
-
     fn normalize_focus(&mut self, layout: ShellLayout) {
         let visible = match self.focus {
             FocusArea::Navigation => true,
@@ -1479,7 +1624,7 @@ impl Workspace {
     }
 }
 
-fn is_shift_tab_key(key: KeyEvent) -> bool {
+fn is_shift_view_switch_key(key: KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::SHIFT)
         && matches!(key.code, KeyCode::Char('h' | 'l' | 'H' | 'L'))
 }
@@ -1493,7 +1638,6 @@ fn shell_keybindings() -> Vec<crate::Keybinding> {
         crate::Keybinding::new("Switch", "Shift+H/L").with_priority(70),
         crate::Keybinding::new("Picker", "Alt+Tab").with_priority(90),
         crate::Keybinding::new("Lists", "↑/↓, j/k").with_priority(35),
-        crate::Keybinding::new("Focus", "Tab").with_priority(30),
         crate::Keybinding::new("Details", "i").with_priority(20),
         crate::Keybinding::new("Side", "d").with_priority(15),
         crate::Keybinding::new("Commands", "Ctrl+P").with_priority(30),
@@ -1793,6 +1937,31 @@ fn truncate_to_width(value: &str, max_width: usize) -> String {
     result
 }
 
+fn truncate_input_preview(value: &str, max_width: usize) -> String {
+    if Line::from(value).width() <= max_width {
+        return value.to_owned();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let content_width = max_width.saturating_sub(1);
+    let mut visible_reversed = Vec::new();
+    let mut visible_width = 0usize;
+    for character in value.chars().rev() {
+        let character_width = Line::from(character.to_string()).width();
+        if visible_width.saturating_add(character_width) > content_width {
+            break;
+        }
+        visible_reversed.push(character);
+        visible_width += character_width;
+    }
+
+    let mut preview = String::from("…");
+    preview.extend(visible_reversed.into_iter().rev());
+    preview
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct ShellRects {
     tabs: Rect,
@@ -1818,10 +1987,14 @@ pub fn run(mut workspace: Workspace) -> io::Result<()> {
                 let timeout = if workspace.selected_view_has_background_work() {
                     Duration::from_millis(100)
                 } else {
-                    Duration::from_secs(30)
+                    workspace
+                        .notification_timeout()
+                        .unwrap_or(Duration::from_secs(30))
                 };
                 if !event::poll(timeout)? {
-                    if workspace.selected_view_has_background_work() {
+                    if workspace.selected_view_has_background_work()
+                        || workspace.expire_notification()
+                    {
                         break;
                     }
                     continue;
@@ -1881,6 +2054,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn input_preview_keeps_the_cursor_visible_for_long_values() {
+        assert_eq!(truncate_input_preview("abcdef", 4), "…def");
+        assert_eq!(truncate_input_preview("short", 8), "short");
+    }
+
+    #[test]
     fn tabs_remain_visible_and_context_panel_uses_the_right_side() {
         let layout = Workspace::layout(
             Rect::new(0, 0, 120, 36),
@@ -1932,14 +2111,5 @@ mod tests {
         assert!(layout.state.drawer);
         assert!(layout.inspector.is_none());
         assert!(layout.drawer.is_some());
-    }
-
-    #[test]
-    fn focus_cycle_never_targets_hidden_panels() {
-        let mut workspace = Workspace::new();
-        workspace.last_layout = ShellLayout::default();
-        workspace.toggle_inspector();
-        workspace.advance_focus(false);
-        assert_eq!(workspace.focus(), FocusArea::Content);
     }
 }

@@ -4,12 +4,62 @@ use ratatui::{
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
-    FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, Workspace,
-    WorkspaceConfig, WorkspaceError, icons, render_empty_state,
+    FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, ViewDialog,
+    Workspace, WorkspaceConfig, WorkspaceError, icons, render_empty_state,
 };
 
 struct TestView {
     descriptor: ViewDescriptor,
+}
+
+struct OverlayView {
+    descriptor: ViewDescriptor,
+    dialog_open: bool,
+    notification: Option<String>,
+}
+
+impl View for OverlayView {
+    fn descriptor(&self) -> &ViewDescriptor {
+        &self.descriptor
+    }
+
+    fn render(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+        frame.render_widget(Paragraph::new("underlying content"), area);
+    }
+
+    fn handle_key(&mut self, key: KeyEvent, _focus: FocusArea) -> bool {
+        match key.code {
+            KeyCode::Char('d') => self.dialog_open = true,
+            KeyCode::Char('n') => self.notification = Some("Saved item".to_owned()),
+            KeyCode::Esc => self.dialog_open = false,
+            _ => return false,
+        }
+        true
+    }
+
+    fn keybindings(&self, _focus: FocusArea) -> Vec<Keybinding> {
+        if self.dialog_open {
+            vec![
+                Keybinding::new("Save", "Enter"),
+                Keybinding::new("Cancel", "Esc"),
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn dialog(&self) -> Option<ViewDialog> {
+        self.dialog_open.then(|| ViewDialog::Input {
+            title: "New entry".to_owned(),
+            label: "Name".to_owned(),
+            value: "initial".to_owned(),
+            error: None,
+        })
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        self.notification.take()
+    }
 }
 
 impl TestView {
@@ -191,7 +241,7 @@ fn moving_between_focused_tabs_activates_each_view_immediately() {
     let mut workspace = workspace_with_two_views();
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
-    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 100, 0));
     assert_eq!(workspace.focus(), FocusArea::Navigation);
 
     workspace.handle_key(key(KeyCode::Char('j')));
@@ -691,18 +741,78 @@ fn shell_provides_fallbacks_for_missing_panel_contributions() {
 }
 
 #[test]
-fn keyboard_focus_moves_only_through_visible_panels() {
+fn bare_tab_keys_do_not_change_focus_or_switch_views() {
     let mut workspace = workspace_with_two_views();
-    let backend = TestBackend::new(120, 36);
-    let mut terminal = Terminal::new(backend).unwrap();
+    workspace.handle_key(key(KeyCode::Tab));
+    workspace.handle_key(key(KeyCode::BackTab));
+
+    assert_eq!(workspace.focus(), FocusArea::Content);
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
+}
+
+#[test]
+fn view_dialog_is_rendered_as_a_centered_host_overlay() {
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(OverlayView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("overlay").unwrap(),
+                "Overlay",
+                "test dialog contribution",
+            ),
+            dialog_open: true,
+            notification: None,
+        })
+        .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    workspace.handle_key(key(KeyCode::Tab));
-    assert_eq!(workspace.focus(), FocusArea::Navigation);
-    workspace.handle_key(key(KeyCode::Down));
-    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
-    workspace.handle_key(key(KeyCode::Enter));
-    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    let buffer = terminal.backend().buffer();
+    let dialog_top = (0..120)
+        .find(|x| buffer[(*x, 15)].symbol() == "╭")
+        .expect("dialog should be centered horizontally");
+    assert!((20..=40).contains(&dialog_top));
+    let screen = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(screen.contains("New entry"));
+    assert!(screen.contains("Name"));
+    assert!(screen.contains("initial"));
+    assert!(screen.contains("[Enter] Save"));
+}
+
+#[test]
+fn view_notifications_render_in_the_shell_toast_area() {
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(OverlayView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("notice").unwrap(),
+                "Notice",
+                "test notification contribution",
+            ),
+            dialog_open: false,
+            notification: None,
+        })
+        .unwrap();
+    workspace.handle_key(key(KeyCode::Char('n')));
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let notice_row = (0..120)
+        .map(|x| buffer[(x, 33)].symbol())
+        .collect::<String>();
+    let content_row = (0..120)
+        .map(|x| buffer[(x, 2)].symbol())
+        .collect::<String>();
+    assert!(notice_row.contains("Saved item"));
+    assert!(content_row.contains("underlying content"));
+    assert!(!content_row.contains("Saved item"));
 }
 
 #[test]

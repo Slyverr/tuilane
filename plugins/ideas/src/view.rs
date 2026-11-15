@@ -12,7 +12,7 @@ use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
 
 enum InputMode {
     Title { id: Option<IdeaId>, value: String },
@@ -84,7 +84,6 @@ impl IdeasView {
             }
             Ok(_) => self.status = Some("Idea list returned an unexpected response.".to_owned()),
             Err(error) => {
-                self.dirty.set(true);
                 self.status = Some(error);
             }
         }
@@ -169,15 +168,6 @@ impl IdeasView {
             lines.push(Line::from(format!("ID: {}", idea.id())));
             lines.push(Line::from(format!("Updated: {}", idea.updated_at())));
         }
-        if let Some(InputMode::Title { value, .. }) = &self.input_mode {
-            lines.push(Line::from(format!("Idea title: {value}_")));
-        }
-        if matches!(self.input_mode, Some(InputMode::ConfirmDelete(_))) {
-            lines.push(Line::from("Delete this idea?"));
-        }
-        if let Some(status) = &self.status {
-            lines.push(Line::from(status.clone()));
-        }
         lines
     }
 }
@@ -193,7 +183,7 @@ impl View for IdeasView {
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        if self.ideas.is_empty() && self.input_mode.is_none() && self.status.is_none() {
+        if self.ideas.is_empty() && self.input_mode.is_none() {
             render_empty_state(
                 frame,
                 area,
@@ -225,6 +215,40 @@ impl View for IdeasView {
         true
     }
 
+    fn dialog(&self) -> Option<ViewDialog> {
+        match self.input_mode.as_ref()? {
+            InputMode::Title { id, value } => Some(ViewDialog::Input {
+                title: if id.is_some() {
+                    "Rename idea".to_owned()
+                } else {
+                    "Capture idea".to_owned()
+                },
+                label: "Idea title".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::ConfirmDelete(id) => {
+                let title = self
+                    .ideas
+                    .iter()
+                    .find(|idea| idea.id() == id)
+                    .map_or("this idea", |idea| idea.title().as_str());
+                Some(ViewDialog::Confirm {
+                    title: "Delete idea".to_owned(),
+                    message: format!("Delete '{title}'?"),
+                })
+            }
+        }
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        if self.input_mode.is_some() {
+            None
+        } else {
+            self.status.take()
+        }
+    }
+
     fn handle_key(&mut self, key: KeyEvent, focus: FocusArea) -> bool {
         if self.input_mode.is_none() && focus != FocusArea::Content {
             return false;
@@ -232,9 +256,10 @@ impl View for IdeasView {
         if let Some(mode) = self.input_mode.take() {
             match mode {
                 InputMode::Title { id, mut value } => match key.code {
-                    KeyCode::Esc => self.status = Some("Edit cancelled.".to_owned()),
+                    KeyCode::Esc => {}
                     KeyCode::Enter => self.finish_title_input(id, value),
                     KeyCode::Backspace => {
+                        self.status = None;
                         value.pop();
                         self.input_mode = Some(InputMode::Title { id, value });
                     }
@@ -243,6 +268,7 @@ impl View for IdeasView {
                             KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                         ) =>
                     {
+                        self.status = None;
                         value.push(character);
                         self.input_mode = Some(InputMode::Title { id, value });
                     }
@@ -250,7 +276,7 @@ impl View for IdeasView {
                 },
                 InputMode::ConfirmDelete(id) => match key.code {
                     KeyCode::Esc | KeyCode::Char('n') => {
-                        self.status = Some("Delete cancelled.".to_owned());
+                        self.status = None;
                     }
                     KeyCode::Char('y') => {
                         self.run_command(IdeaCommand::Delete { id }, |response| match response {
@@ -287,6 +313,11 @@ impl View for IdeasView {
                 }
                 true
             }
+            KeyCode::F(5) => {
+                self.status = None;
+                self.dirty.set(true);
+                true
+            }
             KeyCode::Up => {
                 self.move_selection(-1);
                 true
@@ -318,6 +349,7 @@ impl View for IdeasView {
                 Keybinding::new("Capture", "c").with_priority(90),
                 Keybinding::new("Rename", "e").with_priority(80),
                 Keybinding::new("Delete", "Delete").with_priority(60),
+                Keybinding::new("Refresh", "F5").with_priority(5),
             ],
         }
     }

@@ -15,7 +15,7 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
     items::{ItemRef, ItemSummary},
 };
-use tuilane_ui::{FocusArea, Keybinding, View, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, View, ViewDialog, render_empty_state};
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -108,7 +108,6 @@ impl LinksView {
             }
             Ok(_) => self.status = Some("Link query returned an unexpected response.".to_owned()),
             Err(error) => {
-                self.dirty.set(true);
                 self.status = Some(error);
             }
         }
@@ -308,17 +307,6 @@ impl LinksView {
                 }
             }
         }
-        if let Some(input) = &self.input_mode {
-            let (label, value) = match input {
-                InputMode::Item(value) => ("Item reference", value),
-                InputMode::Target(value) => ("Link target", value),
-                InputMode::Reference(value) => ("File path or URL", value),
-            };
-            lines.push(Line::from(format!("{label}: {value}_")));
-        }
-        if let Some(status) = &self.status {
-            lines.push(Line::from(status.clone()));
-        }
         lines
     }
 }
@@ -356,13 +344,45 @@ impl View for LinksView {
             Keybinding::new("Outgoing", "o").with_priority(60),
             Keybinding::new("References", "r").with_priority(50),
             Keybinding::new("Remove", "Delete").with_priority(40),
+            Keybinding::new("Refresh", "F5").with_priority(5),
         ]);
         bindings
     }
 
+    fn dialog(&self) -> Option<ViewDialog> {
+        match self.input_mode.as_ref()? {
+            InputMode::Item(value) => Some(ViewDialog::Input {
+                title: "Open related item".to_owned(),
+                label: "Item reference".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::Target(value) => Some(ViewDialog::Input {
+                title: "Add item link".to_owned(),
+                label: "Target reference".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+            InputMode::Reference(value) => Some(ViewDialog::Input {
+                title: "Add external reference".to_owned(),
+                label: "File path or URL".to_owned(),
+                value: value.clone(),
+                error: self.status.clone(),
+            }),
+        }
+    }
+
+    fn take_notification(&mut self) -> Option<String> {
+        if self.input_mode.is_some() {
+            None
+        } else {
+            self.status.take()
+        }
+    }
+
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         self.refresh();
-        if self.item.is_none() && self.input_mode.is_none() && self.status.is_none() {
+        if self.item.is_none() && self.input_mode.is_none() {
             render_empty_state(
                 frame,
                 area,
@@ -386,7 +406,7 @@ impl View for LinksView {
             };
             match key.code {
                 KeyCode::Esc => {
-                    self.status = Some("Input cancelled.".to_owned());
+                    self.status = None;
                     return true;
                 }
                 KeyCode::Enter => {
@@ -394,6 +414,7 @@ impl View for LinksView {
                     return true;
                 }
                 KeyCode::Backspace => {
+                    self.status = None;
                     value.pop();
                 }
                 KeyCode::Char(character)
@@ -401,6 +422,7 @@ impl View for LinksView {
                         KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                     ) =>
                 {
+                    self.status = None;
                     value.push(character);
                 }
                 _ => {}
@@ -463,6 +485,11 @@ impl View for LinksView {
             }
             KeyCode::Delete => {
                 self.remove_selected();
+                true
+            }
+            KeyCode::F(5) => {
+                self.status = None;
+                self.dirty.set(true);
                 true
             }
             KeyCode::Up => {

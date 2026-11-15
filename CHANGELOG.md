@@ -9,6 +9,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 - Add a searchable Alt+Tab view picker and immediate tab activation by keyboard and mouse.
 - Fit prioritized, compact view shortcuts on one footer line and list all bindings in help.
 - Show view descriptions and command context in searchable pickers.
+- Present task, project, note, idea, link, and saved-search inputs in centered dialogs.
+- Show operation feedback as short-lived shell notices instead of content rows.
 
 ### Changed
 
@@ -18,6 +20,8 @@ All notable **user-visible** changes to released versions of tuilane will be rec
 - Highlight the active tab without repeating its title in the content border.
 - Center empty-state guidance and prioritize active-view actions over global navigation in the footer.
 - Use centered Nerd Font icons consistently across tabs, overview cards, and workspace commands.
+- Leave bare `Tab` and `Shift+Tab` unused while keeping `Alt+Tab` for the view picker.
+- Navigate calendar days with `h`/`l` as well as Left/Right.
 
 ## [0.11.0] - 2026-11-14
 
