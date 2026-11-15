@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
 use tuilane_core::{
     CommandCallerId, CommandCancellation, CommandDispatchError, CommandDispatcher, EventBus,
@@ -796,10 +796,12 @@ fn task_view_routes_create_due_date_completion_and_delete_commands() {
         workspace.handle_key(key(KeyCode::Char(character)));
     }
     workspace.handle_key(key(KeyCode::Enter));
-    assert!(render_text(&mut workspace).contains("◷ 2026-11-20"));
+    assert!(render_text(&mut workspace).contains("Due 2026-11-20"));
 
     workspace.handle_key(key(KeyCode::Char('x')));
-    assert!(render_text(&mut workspace).contains("✓  write q"));
+    let completed = render_text(&mut workspace);
+    assert!(completed.contains("Done"));
+    assert!(completed.contains("write q"));
 
     workspace.handle_key(key(KeyCode::Delete));
     workspace.handle_key(key(KeyCode::Char('y')));
@@ -810,4 +812,58 @@ fn task_view_routes_create_due_date_completion_and_delete_commands() {
         })
         .expect("list after delete");
     assert_eq!(tasks(remaining).len(), 0);
+}
+
+#[test]
+fn task_browser_selects_rows_with_the_mouse() {
+    let file = TestDatabase::new();
+    let plugin = TasksPlugin::new(file.open()).expect("initialize task schema");
+    let mut commands = CommandDispatcher::new();
+    let mut services = ServiceBroker::new();
+    let events = EventBus::new();
+    plugin
+        .register(&mut commands, &mut services, events)
+        .expect("register task contracts");
+    commands
+        .execute(TaskCommand::Create {
+            title: TaskTitle::new("First task").unwrap(),
+            due_date: None,
+        })
+        .unwrap();
+    commands
+        .execute(TaskCommand::Create {
+            title: TaskTitle::new("Second task").unwrap(),
+            due_date: None,
+        })
+        .unwrap();
+
+    let mut workspace = Workspace::new();
+    workspace
+        .register_view(TasksView::new(Rc::new(RefCell::new(commands))))
+        .expect("register Tasks view");
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).expect("create test terminal");
+    terminal
+        .draw(|frame| workspace.render(frame))
+        .expect("render task browser");
+    let row = (0..36)
+        .find(|row| {
+            (0..120)
+                .map(|column| terminal.backend().buffer()[(column, *row)].symbol())
+                .collect::<String>()
+                .contains("Second task")
+        })
+        .expect("second task row is visible");
+
+    assert!(workspace.handle_mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 20,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }));
+    terminal
+        .draw(|frame| workspace.render(frame))
+        .expect("render selected task");
+    assert!((0..120).any(|column| {
+        terminal.backend().buffer()[(column, row)].bg == ratatui::style::Color::Cyan
+    }));
 }

@@ -5,7 +5,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::Paragraph,
 };
 use tuilane_core::CommandDispatcher;
@@ -18,7 +18,20 @@ use tuilane_plugin_api::{
     DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
     DashboardWidgetDescriptor, DashboardWidgetId, ViewDescriptor, ViewId,
 };
-use tuilane_ui::{FocusArea, Keybinding, View, ViewAction, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    BrowserDetails, BrowserHitMap, BrowserItem, BrowserTone, FocusArea, Keybinding, ThemePreset,
+    View, ViewAction, ViewDialog, render_browser, render_empty_state, select_browser_row,
+};
+
+fn search_icon(kind: &str) -> &'static str {
+    match kind {
+        "task" => tuilane_ui::icons::TASKS,
+        "project" => tuilane_ui::icons::PROJECTS,
+        "note" => tuilane_ui::icons::NOTES,
+        "idea" => tuilane_ui::icons::IDEAS,
+        _ => tuilane_ui::icons::DEFAULT,
+    }
+}
 
 /// Search workspace items through the shared host command path.
 pub struct SearchView {
@@ -35,6 +48,7 @@ pub struct SearchView {
     results: Vec<SearchResult>,
     selected: usize,
     status: Option<String>,
+    browser_hits: BrowserHitMap,
 }
 
 impl SearchView {
@@ -58,6 +72,7 @@ impl SearchView {
             results: Vec::new(),
             selected: 0,
             status: None,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -171,25 +186,6 @@ impl SearchView {
             self.selected = (self.selected + self.results.len() - 1) % self.results.len();
         }
     }
-
-    fn result_lines(&self) -> Vec<Line<'static>> {
-        if self.results.is_empty() {
-            return Vec::new();
-        }
-        self.results
-            .iter()
-            .enumerate()
-            .map(|(index, result)| {
-                let marker = if index == self.selected { ">" } else { " " };
-                Line::from(format!(
-                    "{marker} [{}] {}  {}",
-                    result.item().reference().kind(),
-                    result.item().title(),
-                    result.item().reference()
-                ))
-            })
-            .collect()
-    }
 }
 
 impl View for SearchView {
@@ -235,115 +231,151 @@ impl View for SearchView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        if self.saved_searches_open && self.saved_searches.is_empty() {
-            render_empty_state(
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
+        if self.saved_searches_open {
+            let items = self
+                .saved_searches
+                .iter()
+                .map(|saved| {
+                    BrowserItem::new(saved.name().as_str())
+                        .with_icon(tuilane_ui::icons::SEARCH)
+                        .with_summary(saved.query().as_str())
+                        .with_badge(saved.kind().unwrap_or("All"), BrowserTone::Accent)
+                })
+                .collect::<Vec<_>>();
+            let details = self.saved_searches.get(self.saved_selected).map(|saved| {
+                BrowserDetails::new(saved.name().as_str())
+                    .with_eyebrow("SAVED SEARCH")
+                    .with_field("Query", saved.query().as_str())
+                    .with_field("Type", saved.kind().unwrap_or("All items"))
+                    .with_summary("Press Enter to run this search.")
+            });
+            render_browser(
                 frame,
                 area,
+                theme,
+                &items,
+                Some(self.saved_selected),
+                details.as_ref(),
                 "No saved searches",
-                "Save a search from Commands to keep it for later.",
+                "Save a search from the command palette to keep it for later.",
+                &mut self.browser_hits,
             );
             return;
         }
 
-        if !self.saved_searches_open && self.results.is_empty() {
-            if self.query.is_empty() && !self.editing {
-                render_empty_state(
-                    frame,
-                    area,
-                    "Search your workspace",
-                    "Find tasks, projects, notes, and ideas by their content.",
-                );
-                return;
-            }
-
-            let header_lines = if self.editing {
-                vec![Line::from(format!("/{}_", self.query))]
-            } else {
-                vec![
-                    Line::from(format!("Query: {}", self.query)),
-                    Line::from(format!(
-                        "Filter: {}",
-                        self.kind.as_deref().unwrap_or("all items")
-                    )),
-                ]
-            };
-            let header_height = header_lines.len() as u16;
-            frame.render_widget(
-                Paragraph::new(header_lines),
-                Rect::new(area.x, area.y, area.width, header_height.min(area.height)),
-            );
+        if self.query.is_empty() && !self.editing {
+            self.browser_hits.clear();
             render_empty_state(
                 frame,
-                Rect::new(
-                    area.x,
-                    area.y.saturating_add(header_height),
-                    area.width,
-                    area.height.saturating_sub(header_height),
-                ),
+                area,
+                "Search your workspace",
+                "Press / to find tasks, projects, notes, and ideas.",
+            );
+            return;
+        }
+
+        let query = if self.editing {
+            format!("/{}_", self.query)
+        } else {
+            self.query.clone()
+        };
+        let filter = self.kind.as_deref().unwrap_or("All items");
+        let count = self.results.len();
+        let header = Line::from(vec![
+            Span::styled(
+                format!("{}  ", tuilane_ui::icons::SEARCH),
+                theme.accent_style(),
+            ),
+            Span::styled(query, theme.header_style().add_modifier(Modifier::BOLD)),
+            Span::raw("   ·   "),
+            Span::styled(filter, theme.muted_style()),
+            Span::raw(if self.editing {
+                String::new()
+            } else {
+                format!("   ·   {count} matches")
+            }),
+        ]);
+        let header_area = Rect::new(area.x, area.y, area.width, 1.min(area.height));
+        frame.render_widget(Paragraph::new(header), header_area);
+        let body = Rect::new(
+            area.x,
+            area.y.saturating_add(2),
+            area.width,
+            area.height.saturating_sub(2),
+        );
+
+        if self.results.is_empty() {
+            self.browser_hits.clear();
+            render_empty_state(
+                frame,
+                body,
                 if self.editing {
                     "Keep typing"
                 } else {
                     "No matches"
                 },
                 if self.editing {
-                    "Search results will appear here."
+                    "Run the search with Enter."
                 } else {
-                    "Try a different search or item filter."
+                    "Try a different query or item filter."
                 },
             );
             return;
         }
 
-        let lines = if self.saved_searches_open {
-            let mut lines = vec![Line::from("Saved searches")];
-            if self.saved_searches.is_empty() {
-                lines.push(Line::from(
-                    "No saved searches. Save one from the command palette.",
-                ));
-            } else {
-                lines.extend(
-                    self.saved_searches
-                        .iter()
-                        .enumerate()
-                        .map(|(index, saved)| {
-                            let marker = if index == self.saved_selected {
-                                "> "
-                            } else {
-                                "  "
-                            };
-                            Line::from(format!(
-                                "{marker}{}  [{}] {}",
-                                saved.name().as_str(),
-                                saved.kind().unwrap_or("all"),
-                                saved.query().as_str()
-                            ))
-                        }),
-                );
-            }
-            lines
-        } else {
-            let mut lines = vec![Line::from(if self.editing {
-                format!("/{}_", self.query)
-            } else if self.query.is_empty() {
-                "Search your workspace".to_owned()
-            } else {
-                format!("Query: {}", self.query)
-            })];
-            if !self.editing {
-                lines.push(Line::from(format!(
-                    "Filter: {}",
-                    self.kind.as_deref().unwrap_or("all items")
-                )));
-            }
-            lines.extend(self.result_lines());
-            lines
-        };
-        frame.render_widget(
-            Paragraph::new(lines)
-                .style(Style::default())
-                .wrap(ratatui::widgets::Wrap { trim: true }),
-            area,
+        let items = self
+            .results
+            .iter()
+            .map(|result| {
+                let kind = result.item().reference().kind();
+                BrowserItem::new(result.item().title())
+                    .with_icon(search_icon(kind))
+                    .with_summary(result.excerpt())
+                    .with_badge(kind, BrowserTone::Accent)
+            })
+            .collect::<Vec<_>>();
+        let details = self.results.get(self.selected).map(|result| {
+            BrowserDetails::new(result.item().title())
+                .with_eyebrow(format!("{} RESULT", result.item().reference().kind()))
+                .with_field("Reference", result.item().reference().to_string())
+                .with_field("Query", self.query.as_str())
+                .with_body(result.excerpt())
+        });
+        render_browser(
+            frame,
+            body,
+            theme,
+            &items,
+            Some(self.selected),
+            details.as_ref(),
+            "No matches",
+            "Try a different query or item filter.",
+            &mut self.browser_hits,
         );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        if focus != FocusArea::Content || self.editing || self.saving_name {
+            return false;
+        }
+        if self.saved_searches_open {
+            let mut selected = Some(self.saved_selected);
+            if select_browser_row(&self.browser_hits, &mut selected, event) {
+                self.saved_selected = selected.unwrap_or_default();
+                return true;
+            }
+        } else {
+            let mut selected = Some(self.selected);
+            if select_browser_row(&self.browser_hits, &mut selected, event) {
+                self.selected = selected.unwrap_or_default();
+                return true;
+            }
+        }
+        false
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
@@ -484,12 +516,16 @@ impl View for SearchView {
                 }
                 KeyCode::Backspace => {
                     self.query.pop();
+                    self.results.clear();
+                    self.selected = 0;
                 }
                 KeyCode::Char(character)
                     if !key.modifiers.contains(KeyModifiers::CONTROL)
                         && self.query.chars().count() < 256 =>
                 {
                     self.query.push(character);
+                    self.results.clear();
+                    self.selected = 0;
                 }
                 _ => {}
             }
@@ -498,6 +534,8 @@ impl View for SearchView {
         match key.code {
             KeyCode::Char('/') => {
                 self.query.clear();
+                self.results.clear();
+                self.selected = 0;
                 self.editing = true;
                 self.status = None;
                 true

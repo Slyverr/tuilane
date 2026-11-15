@@ -22,7 +22,7 @@ use tuilane_plugin_api::{
 use tuilane_search::SearchPlugin;
 use tuilane_search::SearchView;
 use tuilane_storage::SqliteDatabase;
-use tuilane_ui::{FocusArea, Workspace};
+use tuilane_ui::Workspace;
 
 fn document(kind: &str, id: &str, title: &str, content: &str) -> SearchDocument {
     SearchDocument::new(
@@ -294,9 +294,6 @@ fn search_view_routes_queries_and_inspects_the_selected_result() {
         workspace.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
     }
     workspace.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    workspace.toggle_inspector();
-    assert_eq!(workspace.focus(), FocusArea::Inspector);
-
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
     let output = terminal
@@ -309,7 +306,7 @@ fn search_view_routes_queries_and_inspects_the_selected_result() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(output.contains("Query: signal"), "{output}");
+    assert!(output.contains("signal"), "{output}");
     assert!(output.contains("Signal processing"), "{output}");
     assert!(output.contains("A [signal] found in the"), "{output}");
     assert!(output.contains("sample"), "{output}");
@@ -374,7 +371,8 @@ fn search_view_saves_and_runs_named_filtered_views_from_the_palette() {
         .map(|cell| cell.symbol())
         .collect::<String>();
     assert!(output.contains("Signal tasks"));
-    assert!(output.contains("[task] signal"));
+    assert!(output.contains("task"));
+    assert!(output.contains("signal"));
     workspace.handle_key(key(KeyCode::Enter));
 
     assert_eq!(

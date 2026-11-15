@@ -5,7 +5,7 @@ use std::{
 };
 
 use chrono::{Local, NaiveDate};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
 use tuilane_calendar::CalendarView;
 use tuilane_core::{EventBus, ServiceBroker};
@@ -117,8 +117,63 @@ fn calendar_renders_the_selected_month_and_date() {
         .collect::<String>();
 
     assert!(text.contains("February 2024"));
-    assert!(text.contains("[29]"));
-    assert!(text.contains("Selected date: 2024-02-29"));
+    assert!(text.contains("29"));
+    assert!(text.contains("Selected · Thu, Feb 29"));
+}
+
+#[test]
+fn calendar_explains_when_the_terminal_cannot_fit_the_month() {
+    let mut calendar = calendar(date(2024, 2, 29));
+    let mut terminal = Terminal::new(TestBackend::new(48, 7)).expect("create test terminal");
+    terminal
+        .draw(|frame| calendar.render(frame, frame.area()))
+        .expect("render compact calendar");
+    let text = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+
+    assert!(text.contains("Calendar needs more space"));
+}
+
+#[test]
+fn calendar_keeps_the_resize_hint_readable_on_narrow_terminals() {
+    let mut calendar = calendar(date(2024, 2, 29));
+    let mut terminal = Terminal::new(TestBackend::new(20, 14)).expect("create test terminal");
+    terminal
+        .draw(|frame| calendar.render(frame, frame.area()))
+        .expect("render narrow calendar");
+    let text = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+
+    assert!(text.contains("Expand calendar"));
+    assert!(text.contains("See full month"));
+}
+
+#[test]
+fn clicking_a_date_selects_it() {
+    let mut calendar = calendar(date(2024, 2, 28));
+    let mut terminal = Terminal::new(TestBackend::new(48, 14)).expect("create test terminal");
+    terminal
+        .draw(|frame| calendar.render(frame, frame.area()))
+        .expect("render calendar");
+
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 22,
+        row: 6,
+        modifiers: KeyModifiers::NONE,
+    };
+    assert!(calendar.handle_mouse(click, FocusArea::Content));
+    assert_eq!(calendar.selected_date(), date(2024, 2, 29));
 }
 
 #[test]

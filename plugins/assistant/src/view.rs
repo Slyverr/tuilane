@@ -3,9 +3,10 @@ use std::{cell::RefCell, rc::Rc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::Rect,
-    text::Line,
-    widgets::{Paragraph, Wrap},
+    layout::{Constraint, Layout, Rect},
+    style::Modifier,
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -16,7 +17,7 @@ use tuilane_plugin_api::{
     DashboardWidgetId, ViewDescriptor, ViewId,
     tasks::{TaskCommand, TaskCommandResult, TaskId, TaskStatus, TaskTitle},
 };
-use tuilane_ui::{FocusArea, Keybinding, View, render_empty_state};
+use tuilane_ui::{FocusArea, Keybinding, ThemePreset, View, render_empty_state};
 
 use crate::{
     AssistantConfig,
@@ -475,30 +476,54 @@ impl AssistantView {
         self.transcript.push(TranscriptEntry { kind, text });
     }
 
-    fn render_lines(&self) -> Vec<Line<'static>> {
+    fn render_lines(&self, theme: ThemePreset) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         for entry in &self.transcript {
-            let label = match entry.kind {
-                TranscriptKind::User => "You",
-                TranscriptKind::Assistant => "Assistant",
-                TranscriptKind::Tool => "Task tool",
+            let (icon, label, style) = match entry.kind {
+                TranscriptKind::User => (
+                    tuilane_ui::icons::DEFAULT,
+                    "You",
+                    theme.accent_style().add_modifier(Modifier::BOLD),
+                ),
+                TranscriptKind::Assistant => (
+                    tuilane_ui::icons::ASSISTANT,
+                    "Assistant",
+                    theme.header_style().add_modifier(Modifier::BOLD),
+                ),
+                TranscriptKind::Tool => (
+                    tuilane_ui::icons::COMMANDS,
+                    "Task tool",
+                    theme.muted_style().add_modifier(Modifier::BOLD),
+                ),
             };
-            lines.push(Line::from(format!("{label}:")));
+            lines.push(Line::from(vec![
+                Span::styled(icon, theme.accent_style()),
+                Span::raw("  "),
+                Span::styled(format!("{label}  "), style),
+            ]));
             lines.extend(entry.text.lines().map(|line| Line::from(line.to_owned())));
             if entry.text.is_empty() {
                 lines.push(Line::from(" "));
             }
+            lines.push(Line::default());
         }
         if let Some(proposal) = &self.pending_proposal {
-            lines.push(Line::from("Proposed task change:"));
+            lines.push(Line::from(vec![
+                Span::styled(tuilane_ui::icons::PERMISSIONS, theme.accent_style()),
+                Span::raw("  "),
+                Span::styled(
+                    "Approval required",
+                    theme.warning_style().add_modifier(Modifier::BOLD),
+                ),
+            ]));
             lines.extend(
                 proposal
                     .preview
                     .lines()
                     .map(|line| Line::from(line.to_owned())),
             );
+            lines.push(Line::default());
         }
-        lines.push(Line::from(format!("You> {}_", self.input)));
         lines
     }
 }
@@ -533,27 +558,78 @@ impl View for AssistantView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.drain_provider_events();
-        if self.transcript.is_empty()
+        let awaiting_first_prompt = self.transcript.is_empty()
             && self.input.is_empty()
             && self.pending_proposal.is_none()
-            && !self.worker.is_active()
-        {
+            && !self.worker.is_active();
+        if area.height < 3 {
             render_empty_state(
                 frame,
                 area,
                 "Start a conversation",
-                "Your messages and answers will appear here.",
+                "Resize to enter a prompt.",
             );
             return;
         }
-        let lines = self.render_lines();
-        let scroll = lines.len().saturating_sub(usize::from(area.height)) as u16;
+        let regions = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(area);
+        if awaiting_first_prompt {
+            render_empty_state(
+                frame,
+                regions[0],
+                "Start a conversation",
+                "Your messages and answers will appear here.",
+            );
+        } else {
+            let history_lines = self.render_lines(theme);
+            let wrap_width = usize::from(regions[0].width.max(1));
+            let line_count = history_lines
+                .iter()
+                .map(|line| line.width().max(1).div_ceil(wrap_width))
+                .sum::<usize>();
+            let history = Paragraph::new(history_lines).wrap(Wrap { trim: true });
+            let scroll = line_count
+                .saturating_sub(usize::from(regions[0].height))
+                .min(usize::from(u16::MAX)) as u16;
+            frame.render_widget(history.scroll((scroll, 0)), regions[0]);
+        }
+
+        let prompt_block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(theme.panel_style(self.pending_proposal.is_some()));
+        let prompt_area = prompt_block.inner(regions[1]);
+        frame.render_widget(prompt_block, regions[1]);
+        let prompt = if self.pending_proposal.is_some() {
+            Line::from(vec![
+                Span::styled("Approve", theme.accent_style()),
+                Span::raw(" y   "),
+                Span::styled("Reject", theme.muted_style()),
+                Span::raw(" n / Esc"),
+            ])
+        } else if self.worker.is_active() {
+            Line::from(vec![
+                Span::styled(tuilane_ui::icons::ASSISTANT, theme.accent_style()),
+                Span::raw("  "),
+                Span::styled("Working…  Esc to cancel", theme.muted_style()),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("You  ", theme.accent_style().add_modifier(Modifier::BOLD)),
+                Span::raw(self.input.clone()),
+                Span::styled("▏", theme.accent_style()),
+            ])
+        };
+        let horizontal_scroll = prompt
+            .width()
+            .saturating_sub(usize::from(prompt_area.width))
+            .min(usize::from(u16::MAX)) as u16;
         frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: true })
-                .scroll((scroll, 0)),
-            area,
+            Paragraph::new(prompt).scroll((0, horizontal_scroll)),
+            prompt_area,
         );
     }
 
@@ -764,6 +840,7 @@ fn is_shell_navigation_key(key: KeyEvent) -> bool {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use ratatui::{Terminal, backend::TestBackend};
     use serde_json::json;
     use tuilane_core::CommandDispatchError;
     use tuilane_plugin_api::{
@@ -860,6 +937,26 @@ mod tests {
             proposal.prepared.preview().descriptor().id(),
             "tasks.complete_many@1"
         );
+    }
+
+    #[test]
+    fn assistant_keeps_the_input_prompt_visible_before_the_first_message() {
+        let (mut view, _) = test_view(false);
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+        terminal
+            .draw(|frame| view.render(frame, frame.area()))
+            .unwrap();
+
+        let output = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(output.contains("Start a conversation"));
+        assert!(output.contains("You"));
     }
 
     fn tool_call(name: &str, arguments: serde_json::Value) -> ToolCall {

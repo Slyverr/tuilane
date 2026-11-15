@@ -4,13 +4,13 @@ use std::{
 };
 
 use chrono::{Datelike, Days, Local, Months, NaiveDate};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Line,
-    widgets::{Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 use tuilane_core::{EventBus, EventSubscription, ServiceBroker, ServiceBrokerError};
 use tuilane_plugin_api::tasks::{TaskDate, TaskSummary, TasksByDateV1, TasksChangedV1};
@@ -18,7 +18,8 @@ use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
     DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
     DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
-    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View,
+    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, ThemePreset, View,
+    render_empty_state,
 };
 
 /// Calendar month view with keyboard date selection and an optional Tasks inspector.
@@ -29,6 +30,7 @@ pub struct CalendarView {
     tasks: Option<Result<Vec<TaskSummary>, String>>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
+    day_hits: Vec<(NaiveDate, Rect)>,
 }
 
 impl CalendarView {
@@ -55,6 +57,7 @@ impl CalendarView {
             tasks: None,
             dirty,
             _event_subscription: event_subscription,
+            day_hits: Vec::new(),
         }
     }
 
@@ -63,41 +66,140 @@ impl CalendarView {
         self.selected_date
     }
 
-    fn month_lines(&self) -> Vec<Line<'static>> {
+    fn render_month(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
+        self.day_hits.clear();
+        let title = self.selected_date.format("%B %Y").to_string();
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(theme.panel_style(false))
+            .title(Line::from(format!(" {} ", title)).style(theme.header_style()));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
         let first_day = self.selected_date.with_day(1).unwrap_or(self.selected_date);
         let weekday_offset = first_day.weekday().num_days_from_monday();
         let days_in_month = days_in_month(self.selected_date);
         let weeks = (weekday_offset + days_in_month).div_ceil(7);
-        let mut lines = vec![
-            Line::from(self.selected_date.format("%B %Y").to_string())
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-            Line::from("Mo   Tu   We   Th   Fr   Sa   Su"),
-        ];
-
-        for week in 0..weeks {
-            let cells = (0..7)
-                .map(|weekday| {
-                    let day = week * 7 + weekday + 1;
-                    if day <= weekday_offset || day > weekday_offset + days_in_month {
-                        "    ".to_owned()
-                    } else {
-                        let day = day - weekday_offset;
-                        if day == self.selected_date.day() {
-                            format!("[{day:>2}]")
-                        } else {
-                            format!(" {day:>2} ")
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
-            lines.push(Line::from(cells.join(" ")));
+        if inner.width < 21 || u32::from(inner.height) < weeks + 1 {
+            let (title, description) = match inner.width {
+                0..=5 => ("!", ""),
+                6..=14 => ("Resize", ""),
+                15..=17 => ("Expand", "Resize terminal"),
+                18..=20 => ("Expand calendar", "See full month"),
+                _ => ("Calendar needs more space", "Resize to see the full month."),
+            };
+            render_empty_state(frame, inner, title, description);
+            return;
         }
 
-        lines.push(Line::from(format!(
-            "Selected date: {}",
-            self.selected_date.format("%Y-%m-%d")
-        )));
-        lines
+        let columns = Layout::horizontal([Constraint::Ratio(1, 7); 7]).split(inner);
+        let weekdays = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+        for (column, weekday) in columns.iter().zip(weekdays) {
+            frame.render_widget(
+                Paragraph::new(weekday)
+                    .alignment(Alignment::Center)
+                    .style(theme.muted_style()),
+                Rect::new(column.x, inner.y, column.width, 1),
+            );
+        }
+
+        let mut y = inner.y.saturating_add(1);
+        for week in 0..weeks {
+            if y >= inner.y.saturating_add(inner.height) {
+                break;
+            }
+            for (weekday, column) in columns.iter().enumerate() {
+                let day_index = week * 7 + weekday as u32;
+                if day_index < weekday_offset {
+                    continue;
+                }
+                let day = day_index - weekday_offset + 1;
+                if day > days_in_month {
+                    continue;
+                }
+                let date = first_day
+                    .checked_add_days(Days::new(u64::from(day - 1)))
+                    .unwrap_or(first_day);
+                let cell = Rect::new(column.x, y, column.width, 1);
+                let style = if date == self.selected_date {
+                    theme.navigation_item_style(true)
+                } else if date == Local::now().date_naive() {
+                    theme.accent_style().add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                };
+                frame.render_widget(
+                    Paragraph::new(format!("{day:>2}"))
+                        .alignment(Alignment::Center)
+                        .style(style),
+                    cell,
+                );
+                self.day_hits.push((date, cell));
+            }
+            y = y.saturating_add(1);
+        }
+
+        if y < inner.y.saturating_add(inner.height) {
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "Selected · {}",
+                    self.selected_date.format("%a, %b %-d")
+                ))
+                .style(theme.accent_style()),
+                Rect::new(
+                    inner.x,
+                    y.saturating_add(1)
+                        .min(inner.y.saturating_add(inner.height).saturating_sub(1)),
+                    inner.width,
+                    1,
+                ),
+            );
+        }
+    }
+
+    fn render_agenda(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(theme.panel_style(false))
+            .title(Line::from(" Day agenda ").style(theme.header_style()));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let mut lines = vec![
+            Line::from(self.selected_date.format("%A, %B %-d").to_string())
+                .style(theme.header_style()),
+        ];
+        match self.tasks.as_ref() {
+            Some(Ok(tasks)) if tasks.is_empty() => {
+                lines.push(Line::default());
+                lines.push(Line::from("No tasks due on this date.").style(theme.muted_style()));
+            }
+            Some(Ok(tasks)) => {
+                lines.push(
+                    Line::from(format!("{} tasks due", tasks.len())).style(theme.muted_style()),
+                );
+                lines.push(Line::default());
+                lines.extend(tasks.iter().map(|task| {
+                    let (icon, style) =
+                        if task.status() == tuilane_plugin_api::tasks::TaskStatus::Completed {
+                            (tuilane_ui::icons::TASK_DONE, theme.positive_style())
+                        } else {
+                            (tuilane_ui::icons::TASK_OPEN, theme.accent_style())
+                        };
+                    Line::from(vec![
+                        ratatui::text::Span::styled(icon, style),
+                        ratatui::text::Span::raw("  "),
+                        ratatui::text::Span::raw(task.title().as_str()),
+                    ])
+                }));
+            }
+            Some(Err(error)) => {
+                lines.push(Line::default());
+                lines.push(Line::from(error.as_str()).style(theme.muted_style()));
+            }
+            None => lines.push(Line::from("No task data yet.").style(theme.muted_style())),
+        }
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
     }
 
     fn refresh_tasks(&mut self) {
@@ -199,10 +301,40 @@ impl View for CalendarView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            Paragraph::new(self.month_lines()).wrap(Wrap { trim: true }),
-            area,
-        );
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
+        self.refresh_tasks();
+        if area.width >= 84 {
+            let regions = Layout::horizontal([
+                Constraint::Percentage(68),
+                Constraint::Length(1),
+                Constraint::Percentage(32),
+            ])
+            .split(area);
+            self.render_month(frame, regions[0], theme);
+            self.render_agenda(frame, regions[2], theme);
+        } else {
+            self.render_month(frame, area, theme);
+        }
+    }
+
+    fn handle_mouse(&mut self, event: MouseEvent, focus: FocusArea) -> bool {
+        if focus != FocusArea::Content || event.kind != MouseEventKind::Down(MouseButton::Left) {
+            return false;
+        }
+        let Some((date, _)) = self.day_hits.iter().find(|(_, area)| {
+            event.column >= area.x
+                && event.column < area.x.saturating_add(area.width)
+                && event.row >= area.y
+                && event.row < area.y.saturating_add(area.height)
+        }) else {
+            return false;
+        };
+        self.selected_date = *date;
+        self.dirty.set(true);
+        true
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {

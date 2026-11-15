@@ -1,22 +1,17 @@
 use std::{cell::Cell, rc::Rc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    Frame,
-    layout::Rect,
-    text::Line,
-    widgets::{Paragraph, Wrap},
-};
+use ratatui::{Frame, layout::Rect};
 use tuilane_core::{CommandDispatcher, EventSubscription};
 use tuilane_plugin_api::ideas::{
     Idea, IdeaCommand, IdeaCommandResult, IdeaId, IdeaTitle, IdeasChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
-    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
-    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
-    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
-    ViewDialog, render_empty_state,
+    BrowserDetails, BrowserHitMap, BrowserItem, DashboardItem, DashboardLayout, DashboardOption,
+    DashboardOptionKind, DashboardOptionValue, DashboardSize, DashboardTone, DashboardWidget,
+    DashboardWidgetContent, DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding,
+    ThemePreset, View, ViewAction, ViewDialog, render_browser, select_browser_row,
 };
 
 enum InputMode {
@@ -35,6 +30,7 @@ pub struct IdeasView {
     load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
+    browser_hits: BrowserHitMap,
 }
 
 impl IdeasView {
@@ -63,6 +59,7 @@ impl IdeasView {
             load_error: None,
             dirty,
             _event_subscription: event_subscription,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -160,29 +157,6 @@ impl IdeasView {
         let current = self.selected.unwrap_or(0) as isize;
         self.selected = Some((current + offset).rem_euclid(self.ideas.len() as isize) as usize);
     }
-
-    fn lines(&self) -> Vec<Line<'static>> {
-        let mut lines = self
-            .ideas
-            .iter()
-            .enumerate()
-            .map(|(index, idea)| {
-                let marker = if Some(index) == self.selected {
-                    "> "
-                } else {
-                    "  "
-                };
-                Line::from(format!("{marker}{}", idea.title()))
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(idea) = self.selected_idea() {
-            lines.push(Line::from(format!("\n# {}", idea.title())));
-            lines.push(Line::from(format!("ID: {}", idea.id())));
-            lines.push(Line::from(format!("Updated: {}", idea.updated_at())));
-        }
-        lines
-    }
 }
 
 impl View for IdeasView {
@@ -195,17 +169,49 @@ impl View for IdeasView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.refresh();
-        if self.ideas.is_empty() && self.input_mode.is_none() {
-            render_empty_state(
-                frame,
-                area,
-                "No ideas yet",
-                "Capture an idea when it comes to mind.",
-            );
-        } else {
-            frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
-        }
+        let items = self
+            .ideas
+            .iter()
+            .map(|idea| {
+                let updated = idea.updated_at().get(..10).unwrap_or(idea.updated_at());
+                BrowserItem::new(idea.title().as_str())
+                    .with_icon(tuilane_ui::icons::IDEAS)
+                    .with_summary(format!("Updated {updated}"))
+            })
+            .collect::<Vec<_>>();
+        let details = self.selected_idea().map(|idea| {
+            BrowserDetails::new(idea.title().as_str())
+                .with_eyebrow("IDEA")
+                .with_field("ID", idea.id().to_string())
+                .with_field("Created", idea.created_at())
+                .with_field("Updated", idea.updated_at())
+        });
+        let (empty_title, empty_description) = self.load_error.as_deref().map_or(
+            ("No ideas yet", "Capture an idea when it comes to mind."),
+            |error| ("Ideas unavailable", error),
+        );
+        render_browser(
+            frame,
+            area,
+            theme,
+            &items,
+            self.selected,
+            details.as_ref(),
+            empty_title,
+            empty_description,
+            &mut self.browser_hits,
+        );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        focus == FocusArea::Content
+            && self.input_mode.is_none()
+            && select_browser_row(&self.browser_hits, &mut self.selected, event)
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {

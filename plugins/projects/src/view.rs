@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    text::Line,
     widgets::{Paragraph, Wrap},
 };
 use tuilane_core::{CommandDispatcher, EventSubscription};
@@ -13,10 +12,10 @@ use tuilane_plugin_api::projects::{
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
-    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
-    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
-    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
-    ViewDialog, render_empty_state,
+    BrowserDetails, BrowserHitMap, BrowserItem, DashboardItem, DashboardLayout, DashboardOption,
+    DashboardOptionKind, DashboardOptionValue, DashboardSize, DashboardTone, DashboardWidget,
+    DashboardWidgetContent, DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding,
+    ThemePreset, View, ViewAction, ViewDialog, render_browser, select_browser_row,
 };
 
 enum InputMode {
@@ -38,6 +37,7 @@ pub struct ProjectsView {
     load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
+    browser_hits: BrowserHitMap,
 }
 
 impl ProjectsView {
@@ -66,6 +66,7 @@ impl ProjectsView {
             load_error: None,
             dirty,
             _event_subscription: event_subscription,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -170,21 +171,6 @@ impl ProjectsView {
         let current = self.selected.unwrap_or(0) as isize;
         self.selected = Some((current + offset).rem_euclid(self.projects.len() as isize) as usize);
     }
-
-    fn project_lines(&self) -> Vec<Line<'static>> {
-        self.projects
-            .iter()
-            .enumerate()
-            .map(|(index, project)| {
-                let marker = if Some(index) == self.selected {
-                    "> "
-                } else {
-                    "  "
-                };
-                Line::from(format!("{marker}{}", project.title()))
-            })
-            .collect::<Vec<_>>()
-    }
 }
 
 impl View for ProjectsView {
@@ -197,20 +183,52 @@ impl View for ProjectsView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.refresh();
-        if self.projects.is_empty() && self.input_mode.is_none() {
-            render_empty_state(
-                frame,
-                area,
-                "No projects yet",
-                "Create a project to group related work.",
-            );
-        } else {
-            frame.render_widget(
-                Paragraph::new(self.project_lines()).wrap(Wrap { trim: true }),
-                area,
-            );
-        }
+        let items = self
+            .projects
+            .iter()
+            .map(|project| {
+                let updated = project
+                    .updated_at()
+                    .get(..10)
+                    .unwrap_or(project.updated_at());
+                BrowserItem::new(project.title().as_str())
+                    .with_icon(tuilane_ui::icons::PROJECTS)
+                    .with_summary(format!("Updated {updated}"))
+            })
+            .collect::<Vec<_>>();
+        let details = self.selected_project().map(|project| {
+            BrowserDetails::new(project.title().as_str())
+                .with_eyebrow("PROJECT")
+                .with_field("ID", project.id().to_string())
+                .with_field("Created", project.created_at())
+                .with_field("Updated", project.updated_at())
+        });
+        let (empty_title, empty_description) = self.load_error.as_deref().map_or(
+            ("No projects yet", "Create a project to group related work."),
+            |error| ("Projects unavailable", error),
+        );
+        render_browser(
+            frame,
+            area,
+            theme,
+            &items,
+            self.selected,
+            details.as_ref(),
+            empty_title,
+            empty_description,
+            &mut self.browser_hits,
+        );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        focus == FocusArea::Content
+            && self.input_mode.is_none()
+            && select_browser_row(&self.browser_hits, &mut self.selected, event)
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {

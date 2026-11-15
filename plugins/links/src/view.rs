@@ -1,12 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    Frame,
-    layout::Rect,
-    text::Line,
-    widgets::{Paragraph, Wrap},
-};
+use ratatui::{Frame, layout::Rect};
 use tuilane_core::{CommandDispatcher, EventSubscription};
 use tuilane_plugin_api::links::{
     ExternalReference, LinkCommand, LinkCommandResult, LinksChangedV1,
@@ -17,7 +12,10 @@ use tuilane_plugin_api::{
     DashboardWidgetDescriptor, DashboardWidgetId, ViewDescriptor, ViewId,
     items::{ItemRef, ItemSummary},
 };
-use tuilane_ui::{FocusArea, Keybinding, View, ViewDialog, render_empty_state};
+use tuilane_ui::{
+    BrowserDetails, BrowserHitMap, BrowserItem, BrowserTone, FocusArea, Keybinding, ThemePreset,
+    View, ViewDialog, render_browser, select_browser_row,
+};
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -58,6 +56,7 @@ pub struct LinksView {
     load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
+    browser_hits: BrowserHitMap,
 }
 
 impl LinksView {
@@ -89,6 +88,7 @@ impl LinksView {
             load_error: None,
             dirty,
             _event_subscription: event_subscription,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -272,67 +272,6 @@ impl LinksView {
             }
         }
     }
-
-    fn lines(&self) -> Vec<Line<'static>> {
-        let mut lines = Vec::new();
-        lines.push(Line::from(format!(
-            "Item: {}",
-            self.item
-                .as_ref()
-                .map_or("not selected".to_owned(), ToString::to_string)
-        )));
-        match self.direction {
-            Direction::Outgoing | Direction::Backlinks => {
-                let label = if matches!(self.direction, Direction::Outgoing) {
-                    "Outgoing links"
-                } else {
-                    "Backlinks"
-                };
-                lines.push(Line::from(format!("\n{label}")));
-                if self.items.is_empty() {
-                    lines.push(Line::from("None."));
-                } else {
-                    lines.extend(self.items.iter().enumerate().map(|(index, summary)| {
-                        let marker = if Some(index) == self.selected {
-                            "> "
-                        } else {
-                            "  "
-                        };
-                        Line::from(format!(
-                            "{marker}{}  {}",
-                            summary.title(),
-                            summary.reference()
-                        ))
-                    }));
-                }
-            }
-            Direction::References => {
-                lines.push(Line::from("\nFile and URL references"));
-                if self.references.is_empty() {
-                    lines.push(Line::from("None."));
-                } else {
-                    lines.extend(
-                        self.references
-                            .iter()
-                            .enumerate()
-                            .map(|(index, reference)| {
-                                let marker = if Some(index) == self.selected {
-                                    "> "
-                                } else {
-                                    "  "
-                                };
-                                Line::from(format!(
-                                    "{marker}{}  {}",
-                                    reference.kind().as_str(),
-                                    reference.value()
-                                ))
-                            }),
-                    );
-                }
-            }
-        }
-        lines
-    }
 }
 
 impl View for LinksView {
@@ -405,17 +344,106 @@ impl View for LinksView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.refresh();
-        if self.item.is_none() && self.input_mode.is_none() {
-            render_empty_state(
-                frame,
-                area,
-                "Connect related work",
-                "Choose a task, project, note, or idea to see its links.",
-            );
+        let items = match self.direction {
+            Direction::Outgoing | Direction::Backlinks => self
+                .items
+                .iter()
+                .map(|item| {
+                    BrowserItem::new(item.title())
+                        .with_icon(tuilane_ui::icons::LINKS)
+                        .with_summary(item.reference().to_string())
+                        .with_badge(item.reference().kind(), BrowserTone::Accent)
+                })
+                .collect::<Vec<_>>(),
+            Direction::References => self
+                .references
+                .iter()
+                .map(|reference| {
+                    BrowserItem::new(reference.kind().as_str())
+                        .with_icon(tuilane_ui::icons::LINKS)
+                        .with_summary(reference.value())
+                        .with_badge("External", BrowserTone::Default)
+                })
+                .collect::<Vec<_>>(),
+        };
+        let details = match self.direction {
+            Direction::Outgoing | Direction::Backlinks => self
+                .selected
+                .and_then(|index| self.items.get(index))
+                .map(|item| {
+                    BrowserDetails::new(item.title())
+                        .with_eyebrow(if matches!(self.direction, Direction::Outgoing) {
+                            "OUTGOING LINK"
+                        } else {
+                            "BACKLINK"
+                        })
+                        .with_field("Item", item.reference().to_string())
+                        .with_field(
+                            "Source",
+                            self.item
+                                .as_ref()
+                                .map_or_else(|| "None".to_owned(), ToString::to_string),
+                        )
+                }),
+            Direction::References => self
+                .selected
+                .and_then(|index| self.references.get(index))
+                .map(|reference| {
+                    BrowserDetails::new(reference.kind().as_str())
+                        .with_eyebrow("EXTERNAL REFERENCE")
+                        .with_field("Value", reference.value())
+                        .with_field(
+                            "Owner",
+                            self.item
+                                .as_ref()
+                                .map_or_else(|| "None".to_owned(), ToString::to_string),
+                        )
+                }),
+        };
+        let (empty_title, empty_description) = if let Some(error) = &self.load_error {
+            ("Connections unavailable", error.as_str())
+        } else if self.item.is_none() {
+            (
+                "Choose a source item",
+                "Press s to select a task, project, note, or idea.",
+            )
+        } else if items.is_empty() {
+            match self.direction {
+                Direction::Outgoing => ("No outgoing links", "Add a link with a."),
+                Direction::Backlinks => (
+                    "No backlinks",
+                    "Other items that link here will appear here.",
+                ),
+                Direction::References => (
+                    "No external references",
+                    "Add a file or URL reference with x.",
+                ),
+            }
         } else {
-            frame.render_widget(Paragraph::new(self.lines()).wrap(Wrap { trim: true }), area);
-        }
+            ("No connections", "Choose another direction to browse.")
+        };
+        render_browser(
+            frame,
+            area,
+            theme,
+            &items,
+            self.selected,
+            details.as_ref(),
+            empty_title,
+            empty_description,
+            &mut self.browser_hits,
+        );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        focus == FocusArea::Content
+            && self.input_mode.is_none()
+            && select_browser_row(&self.browser_hits, &mut self.selected, event)
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {

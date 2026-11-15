@@ -7,8 +7,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
     widgets::{Paragraph, Wrap},
 };
 use tuilane_core::{CommandDispatcher, EventBus, EventSubscription};
@@ -17,10 +15,11 @@ use tuilane_plugin_api::tasks::{
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
-    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
-    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
-    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
-    ViewDialog, render_empty_state,
+    BrowserDetails, BrowserHitMap, BrowserItem, BrowserTone, DashboardItem, DashboardLayout,
+    DashboardOption, DashboardOptionKind, DashboardOptionValue, DashboardSize, DashboardTone,
+    DashboardWidget, DashboardWidgetContent, DashboardWidgetDescriptor, DashboardWidgetId,
+    FocusArea, Keybinding, ThemePreset, View, ViewAction, ViewDialog, render_browser,
+    select_browser_row,
 };
 
 enum InputMode {
@@ -45,6 +44,7 @@ pub struct TasksView {
     load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: Option<EventSubscription>,
+    browser_hits: BrowserHitMap,
 }
 
 impl TasksView {
@@ -85,6 +85,7 @@ impl TasksView {
             load_error: None,
             dirty,
             _event_subscription: event_subscription,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -214,45 +215,6 @@ impl TasksView {
         let current = self.selected.unwrap_or(0) as isize;
         self.selected = Some((current + offset).rem_euclid(self.tasks.len() as isize) as usize);
     }
-
-    fn task_lines(&self) -> Vec<Line<'static>> {
-        let key_style = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD);
-        let mut lines = Vec::new();
-        for (index, task) in self.tasks.iter().enumerate() {
-            let selected = Some(index) == self.selected;
-            let marker = if selected { "›" } else { " " };
-            let (state, state_style) = match task.status() {
-                tuilane_plugin_api::tasks::TaskStatus::Open => {
-                    ("○", Style::default().fg(Color::Cyan))
-                }
-                tuilane_plugin_api::tasks::TaskStatus::Completed => {
-                    ("✓", Style::default().fg(Color::Green))
-                }
-            };
-            let due_date = task
-                .due_date()
-                .map_or_else(String::new, |date| format!("  ◷ {date}"));
-            lines.push(Line::from(vec![
-                Span::styled(marker, key_style),
-                Span::raw(" "),
-                Span::styled(state, state_style),
-                Span::raw("  "),
-                Span::styled(
-                    task.title().as_str().to_owned(),
-                    if selected {
-                        Style::default().add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                    },
-                ),
-                Span::styled(due_date, Style::default().fg(Color::Yellow)),
-            ]));
-        }
-
-        lines
-    }
 }
 
 impl View for TasksView {
@@ -265,20 +227,72 @@ impl View for TasksView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.refresh();
-        if self.tasks.is_empty() && self.input_mode.is_none() {
-            render_empty_state(
-                frame,
-                area,
+        let items = self
+            .tasks
+            .iter()
+            .map(|task| {
+                let completed = task.status() == tuilane_plugin_api::tasks::TaskStatus::Completed;
+                BrowserItem::new(task.title().as_str())
+                    .with_icon(if completed {
+                        tuilane_ui::icons::TASK_DONE
+                    } else {
+                        tuilane_ui::icons::TASK_OPEN
+                    })
+                    .with_summary(
+                        task.due_date()
+                            .map_or_else(|| "No due date".to_owned(), |date| format!("Due {date}")),
+                    )
+                    .with_status(
+                        if completed { "Done" } else { "Open" },
+                        if completed {
+                            BrowserTone::Positive
+                        } else {
+                            BrowserTone::Accent
+                        },
+                    )
+            })
+            .collect::<Vec<_>>();
+        let details = self.selected_task().map(|task| {
+            BrowserDetails::new(task.title().as_str())
+                .with_eyebrow("TASK")
+                .with_field("Status", task.status().to_string())
+                .with_field(
+                    "Due",
+                    task.due_date()
+                        .map_or_else(|| "No due date".to_owned(), |date| date.to_string()),
+                )
+                .with_field("Created", task.created_at())
+                .with_field("Updated", task.updated_at())
+        });
+        let (empty_title, empty_description) = self.load_error.as_deref().map_or(
+            (
                 "No tasks yet",
                 "Create a task to start organizing your work.",
-            );
-        } else {
-            frame.render_widget(
-                Paragraph::new(self.task_lines()).wrap(Wrap { trim: true }),
-                area,
-            );
-        }
+            ),
+            |error| ("Tasks unavailable", error),
+        );
+        render_browser(
+            frame,
+            area,
+            theme,
+            &items,
+            self.selected,
+            details.as_ref(),
+            empty_title,
+            empty_description,
+            &mut self.browser_hits,
+        );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        focus == FocusArea::Content
+            && self.input_mode.is_none()
+            && select_browser_row(&self.browser_hits, &mut self.selected, event)
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {

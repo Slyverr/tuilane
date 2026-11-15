@@ -1,22 +1,17 @@
 use std::{cell::Cell, rc::Rc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    Frame,
-    layout::Rect,
-    text::{Line, Text},
-    widgets::{Paragraph, Wrap},
-};
+use ratatui::{Frame, layout::Rect};
 use tuilane_core::{CommandDispatcher, EventSubscription};
 use tuilane_plugin_api::notes::{
     Markdown, Note, NoteCommand, NoteCommandResult, NoteId, NoteTitle, NotesChangedV1,
 };
 use tuilane_plugin_api::{ViewDescriptor, ViewId};
 use tuilane_ui::{
-    DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind, DashboardOptionValue,
-    DashboardSize, DashboardTone, DashboardWidget, DashboardWidgetContent,
-    DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding, View, ViewAction,
-    ViewDialog, render_empty_state,
+    BrowserDetails, BrowserHitMap, BrowserItem, DashboardItem, DashboardLayout, DashboardOption,
+    DashboardOptionKind, DashboardOptionValue, DashboardSize, DashboardTone, DashboardWidget,
+    DashboardWidgetContent, DashboardWidgetDescriptor, DashboardWidgetId, FocusArea, Keybinding,
+    ThemePreset, View, ViewAction, ViewDialog, render_browser, select_browser_row,
 };
 
 enum InputMode {
@@ -35,6 +30,7 @@ pub struct NotesView {
     load_error: Option<String>,
     dirty: Rc<Cell<bool>>,
     _event_subscription: EventSubscription,
+    browser_hits: BrowserHitMap,
 }
 
 impl NotesView {
@@ -63,6 +59,7 @@ impl NotesView {
             load_error: None,
             dirty,
             _event_subscription: event_subscription,
+            browser_hits: BrowserHitMap::default(),
         }
     }
 
@@ -166,37 +163,6 @@ impl NotesView {
         let current = self.selected.unwrap_or(0) as isize;
         self.selected = Some((current + offset).rem_euclid(self.notes.len() as isize) as usize);
     }
-
-    fn lines(&self) -> Vec<Line<'static>> {
-        let mut lines = self
-            .notes
-            .iter()
-            .enumerate()
-            .map(|(index, note)| {
-                let marker = if Some(index) == self.selected {
-                    "> "
-                } else {
-                    "  "
-                };
-                Line::from(format!("{marker}{}", note.title()))
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(note) = self.selected_note() {
-            lines.push(Line::from(format!("\n# {}", note.title())));
-            lines.extend(
-                note.body()
-                    .as_str()
-                    .lines()
-                    .map(|line| Line::from(line.to_owned())),
-            );
-            if note.body().as_str().is_empty() {
-                lines.push(Line::from("(empty Markdown)"));
-            }
-        }
-
-        lines
-    }
 }
 
 impl View for NotesView {
@@ -209,20 +175,56 @@ impl View for NotesView {
     }
 
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.render_with_theme(frame, area, ThemePreset::default());
+    }
+
+    fn render_with_theme(&mut self, frame: &mut Frame<'_>, area: Rect, theme: ThemePreset) {
         self.refresh();
-        if self.notes.is_empty() && self.input_mode.is_none() {
-            render_empty_state(
-                frame,
-                area,
+        let items = self
+            .notes
+            .iter()
+            .map(|note| {
+                let updated = note.updated_at().get(..10).unwrap_or(note.updated_at());
+                BrowserItem::new(note.title().as_str())
+                    .with_icon(tuilane_ui::icons::NOTES)
+                    .with_summary(format!("Updated {updated}"))
+            })
+            .collect::<Vec<_>>();
+        let details = self.selected_note().map(|note| {
+            BrowserDetails::new(note.title().as_str())
+                .with_eyebrow("NOTE · MARKDOWN")
+                .with_field("Created", note.created_at())
+                .with_field("Updated", note.updated_at())
+                .with_body(if note.body().as_str().is_empty() {
+                    "(empty Markdown)"
+                } else {
+                    note.body().as_str()
+                })
+        });
+        let (empty_title, empty_description) = self.load_error.as_deref().map_or(
+            (
                 "No notes yet",
                 "Create a note to keep useful information close.",
-            );
-        } else {
-            frame.render_widget(
-                Paragraph::new(Text::from(self.lines())).wrap(Wrap { trim: true }),
-                area,
-            );
-        }
+            ),
+            |error| ("Notes unavailable", error),
+        );
+        render_browser(
+            frame,
+            area,
+            theme,
+            &items,
+            self.selected,
+            details.as_ref(),
+            empty_title,
+            empty_description,
+            &mut self.browser_hits,
+        );
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent, focus: FocusArea) -> bool {
+        focus == FocusArea::Content
+            && self.input_mode.is_none()
+            && select_browser_row(&self.browser_hits, &mut self.selected, event)
     }
 
     fn dashboard_widgets(&mut self, layout: &DashboardLayout) -> Vec<DashboardWidget> {
