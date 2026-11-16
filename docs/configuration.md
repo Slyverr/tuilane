@@ -9,9 +9,13 @@ version = 1
 theme = "default" # default or high-contrast
 layout = "balanced" # balanced or focus
 keymap = "default" # default or vim; both currently use the same bindings
+navigation = "tabs" # tabs or sidebar
+navigation_collapsed = false # show labels beside navigation glyphs
 ```
 
-The `balanced` layout shows the contextual side panel when terminal width allows it; `focus` keeps the main view full width. The top tab row remains available in both layouts. The `high-contrast` theme uses brighter shell text and yellow accents. Press `Shift+H` or `Shift+L` to switch views; the new view activates immediately. Press `Alt+Tab` to open the searchable view picker. Bare `Tab` and `Shift+Tab` have no workspace action. `i` toggles contextual details and `d` toggles supplemental content in the shared right-side panel; `Esc` returns focus to the main content. With a mouse, click a tab or scroll over the tabs to activate a view, and click a visible panel to focus it.
+The default `tabs` navigation places view glyphs and names above the workspace. Set `navigation = "sidebar"` to place them in a vertical rail; either presentation can show only glyphs with `navigation_collapsed = true`. In icon-only mode, the active view title moves to the content border. The command palette (`Ctrl+P`) offers actions to change the navigation placement and show or hide its labels. These choices are saved in the `ui` section when the application exits normally. Navigation uses shared Nerd Font glyphs. Press `Alt+Left` to focus navigation, then move through sidebar entries with `j`/`k` or Up/Down and press `l` or Enter to return to the selected view; `Esc` returns focus to the content area.
+
+The `balanced` layout shows the contextual side panel when terminal width allows it; `focus` keeps the main view full width. The main view and right-side panel are separate, sibling regions with their own borders. The `high-contrast` theme uses brighter shell text and yellow accents. Press `Shift+H` or `Shift+L` to switch views; the new view activates immediately. Press `Alt+Tab` to open the searchable view picker. Bare `Tab` and `Shift+Tab` have no workspace action. `i` toggles contextual details and `d` toggles supplemental content in the shared right-side panel; `Esc` returns focus to the main content. With a mouse, click a navigation item or scroll over the navigation region to activate a view, and click a visible panel to focus it.
 
 Overview gathers bounded widget data from enabled views and renders it in a responsive one-to-three-column grid. Press `e` while Overview is active to show or hide widgets, reorder them with `Alt+↑`/`Alt+↓`, change their width with `+`/`-`, and edit a widget's declared options with `o`. Enter or a mouse click opens the owning view. The host stores these preferences in the `ui.dashboard` section when the application exits normally; existing TOML comments and unrelated settings are preserved.
 

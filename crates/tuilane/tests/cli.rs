@@ -111,7 +111,7 @@ fn config_check_accepts_supported_presets() {
     let config_path = directory.0.join("tuilane.toml");
     fs::write(
         &config_path,
-        "version = 1\n\n[ui]\ntheme = 'high-contrast'\nlayout = 'focus'\nkeymap = 'vim'\n",
+        "version = 1\n\n[ui]\ntheme = 'high-contrast'\nlayout = 'focus'\nkeymap = 'vim'\nnavigation = 'sidebar'\nnavigation_collapsed = true\n",
     )
     .expect("write configuration file");
 

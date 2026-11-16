@@ -10,7 +10,7 @@ mod workspace;
 pub use browser::{
     BrowserDetails, BrowserHitMap, BrowserItem, BrowserTone, render_browser, select_browser_row,
 };
-pub use config::{KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
+pub use config::{KeymapPreset, LayoutPreset, NavigationStyle, ThemePreset, WorkspaceConfig};
 pub use dashboard_view::DashboardView;
 pub use tuilane_plugin_api::{
     DashboardChoice, DashboardItem, DashboardLayout, DashboardOption, DashboardOptionKind,

@@ -20,9 +20,12 @@ use tuilane_plugin_api::{
     DashboardWidget, DashboardWidgetContent, DashboardWidgetPreference, ViewId,
 };
 
-use crate::{LayoutPreset, ThemePreset, View, ViewDialog, WorkspaceConfig, icons};
+use crate::{LayoutPreset, NavigationStyle, ThemePreset, View, ViewDialog, WorkspaceConfig, icons};
 
 const TAB_ROW_HEIGHT: u16 = 1;
+const SIDEBAR_ENTRY_HEIGHT: u16 = 3;
+const SIDEBAR_WIDTH: u16 = 24;
+const COLLAPSED_NAVIGATION_WIDTH: u16 = 6;
 const SIDE_PANEL_WIDTH: u16 = 34;
 const MIN_MAIN_WIDTH: u16 = 36;
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(3);
@@ -30,7 +33,7 @@ const NOTIFICATION_DURATION: Duration = Duration::from_secs(3);
 /// The shell region currently receiving keyboard navigation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum FocusArea {
-    /// The top tab row. Moving here changes the active view immediately.
+    /// The navigation bar or sidebar. Moving here changes the active view immediately.
     Navigation,
     #[default]
     Content,
@@ -98,6 +101,8 @@ enum PaletteAction {
     },
     ToggleInspector,
     ToggleDrawer,
+    SetNavigation(NavigationStyle),
+    SetNavigationCollapsed(bool),
     ShowHelp,
     Quit,
 }
@@ -577,6 +582,13 @@ impl Workspace {
             return;
         }
 
+        if key.code == KeyCode::Left && key.modifiers.contains(KeyModifiers::ALT) {
+            self.tab_cursor = self.selected;
+            self.focus = FocusArea::Navigation;
+            self.ensure_tab_visible(self.last_regions.navigation);
+            return;
+        }
+
         if self.is_dashboard_active() && self.focus == FocusArea::Content {
             match key.code {
                 KeyCode::Char('e') if key.modifiers.is_empty() => {
@@ -632,6 +644,31 @@ impl Workspace {
         }
 
         if self.focus == FocusArea::Navigation {
+            if self.config.navigation() == NavigationStyle::Sidebar {
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.move_tab_cursor(true);
+                        return;
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.move_tab_cursor(false);
+                        return;
+                    }
+                    KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+                        self.activate_tab_cursor();
+                        return;
+                    }
+                    KeyCode::Left | KeyCode::Esc => {
+                        self.cancel_tab_navigation();
+                        return;
+                    }
+                    KeyCode::Char('h') => {
+                        self.move_tab_cursor(false);
+                        return;
+                    }
+                    _ => {}
+                }
+            }
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => {
                     self.move_tab_cursor(true);
@@ -729,7 +766,7 @@ impl Workspace {
                 focus_changed || view_handled
             }
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                if !rect_contains(self.last_regions.tabs, mouse.column, mouse.row) {
+                if !rect_contains(self.last_regions.navigation, mouse.column, mouse.row) {
                     return false;
                 }
 
@@ -786,10 +823,10 @@ impl Workspace {
 
     fn focus_at(&mut self, column: u16, row: u16) -> bool {
         let regions = self.last_regions;
-        if rect_contains(regions.tabs, column, row) {
+        if rect_contains(regions.navigation, column, row) {
             let previous_selection = self.selected;
             let previous_focus = self.focus;
-            if let Some(index) = self.tab_index_at(column) {
+            if let Some(index) = self.tab_index_at(column, row) {
                 self.activate_view(index);
             } else {
                 self.tab_cursor = self.selected;
@@ -840,7 +877,7 @@ impl Workspace {
         self.selected = Some(index);
         self.tab_cursor = Some(index);
         self.focus = FocusArea::Content;
-        self.ensure_tab_visible(self.last_regions.tabs.width);
+        self.ensure_tab_visible(self.last_regions.navigation);
     }
 
     fn switch_adjacent_view(&mut self, forward: bool) {
@@ -1052,10 +1089,10 @@ impl Workspace {
         );
     }
 
-    fn tab_index_at(&self, column: u16) -> Option<usize> {
+    fn tab_index_at(&self, column: u16, row: u16) -> Option<usize> {
         self.last_tab_items
             .iter()
-            .find(|(_, area)| rect_contains(*area, column, self.last_regions.tabs.y))
+            .find(|(_, area)| rect_contains(*area, column, row))
             .map(|(index, _)| *index)
     }
 
@@ -1069,14 +1106,19 @@ impl Workspace {
             self.inspector_open,
             self.drawer_open,
             self.config.layout(),
+            self.config.navigation(),
+            self.config.navigation_collapsed(),
             1,
         );
         self.last_layout = layout.state;
         self.last_regions = layout;
         self.normalize_focus(layout.state);
 
-        self.ensure_tab_visible(layout.tabs.width);
-        self.render_tabs(frame, layout.tabs);
+        self.ensure_tab_visible(layout.navigation);
+        match self.config.navigation() {
+            NavigationStyle::Tabs => self.render_tabs(frame, layout.navigation),
+            NavigationStyle::Sidebar => self.render_sidebar(frame, layout.navigation),
+        }
         self.render_content(frame, layout.main);
         self.capture_notification();
         if let Some(inspector) = layout.inspector {
@@ -1148,6 +1190,7 @@ impl Workspace {
                 view.value().icon(),
                 view.descriptor().title(),
                 usize::from(remaining),
+                self.config.navigation_collapsed(),
                 style,
                 icon_style,
             ) else {
@@ -1164,13 +1207,76 @@ impl Workspace {
         }
     }
 
+    fn render_sidebar(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.last_tab_items.clear();
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+
+        let collapsed = self.config.navigation_collapsed();
+        let bottom = area.y.saturating_add(area.height);
+        let mut y = area.y;
+        for (index, view) in self.views.iter().enumerate().skip(self.tab_scroll) {
+            if y >= bottom {
+                break;
+            }
+            let height = SIDEBAR_ENTRY_HEIGHT.min(bottom.saturating_sub(y));
+            let item_area = Rect::new(area.x, y, area.width, height);
+            let selected = Some(index) == self.selected;
+            let style = if selected {
+                self.config.theme().navigation_item_style(true)
+            } else if self.focus == FocusArea::Navigation && Some(index) == self.tab_cursor {
+                self.config
+                    .theme()
+                    .header_style()
+                    .add_modifier(Modifier::UNDERLINED)
+            } else {
+                self.config.theme().muted_style()
+            };
+            let icon_style = if selected {
+                style
+            } else {
+                self.config.theme().accent_style()
+            };
+            let blank = Line::from(" ".repeat(usize::from(area.width))).style(style);
+            let background = Text::from(vec![blank; usize::from(height)]);
+            frame.render_widget(Paragraph::new(background).style(style), item_area);
+
+            if height > 1 {
+                let label_area = Rect::new(area.x, y.saturating_add(1), area.width, 1);
+                let icon = truncate_to_width(view.value().icon(), 3);
+                let label = if collapsed {
+                    centered_icon(&icon, area.width, style, icon_style)
+                } else {
+                    let title_width = usize::from(area.width.saturating_sub(6));
+                    let title = truncate_to_width(view.descriptor().title(), title_width);
+                    Line::from(vec![
+                        Span::styled(" ", style),
+                        Span::styled(icon, icon_style),
+                        Span::styled(" ", style),
+                        Span::styled(title, style),
+                    ])
+                };
+                frame.render_widget(Paragraph::new(label).style(style), label_area);
+            }
+
+            self.last_tab_items.push((index, item_area));
+            y = y.saturating_add(SIDEBAR_ENTRY_HEIGHT);
+        }
+    }
+
     fn render_content(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let title = if self.config.navigation_collapsed() {
+            self.selected
+                .and_then(|index| self.views.get(index))
+                .map(|view| Line::from(view.descriptor().title().to_owned()))
+                .unwrap_or_default()
+        } else {
+            Line::default()
+        };
         let Some(index) = self.selected else {
-            let block = Self::panel_block(
-                Line::default(),
-                self.focus == FocusArea::Content,
-                self.config.theme(),
-            );
+            let block =
+                Self::panel_block(title, self.focus == FocusArea::Content, self.config.theme());
             let inner = block.inner(area);
             frame.render_widget(block, area);
             crate::render_empty_state(
@@ -1188,11 +1294,7 @@ impl Workspace {
         if self.views.get(index).is_none() {
             return;
         }
-        let block = Self::panel_block(
-            Line::default(),
-            self.focus == FocusArea::Content,
-            self.config.theme(),
-        );
+        let block = Self::panel_block(title, self.focus == FocusArea::Content, self.config.theme());
         let inner = block.inner(area);
         frame.render_widget(block, area);
         if is_dashboard {
@@ -2266,20 +2368,50 @@ impl Workspace {
                 action: PaletteAction::ToggleDrawer,
             },
             PaletteEntry {
-                label: "Show help".to_owned(),
-                context: "Workspace".to_owned(),
-                description: "Show available keyboard and mouse shortcuts.".to_owned(),
-                icon: icons::HELP,
-                search_text: "show help keyboard shortcuts".to_owned(),
-                action: PaletteAction::ShowHelp,
-            },
-            PaletteEntry {
                 label: "Quit workspace".to_owned(),
                 context: "Workspace".to_owned(),
                 description: "Exit the workspace.".to_owned(),
                 icon: icons::QUIT,
                 search_text: "quit exit workspace".to_owned(),
                 action: PaletteAction::Quit,
+            },
+            PaletteEntry {
+                label: match self.config.navigation() {
+                    NavigationStyle::Tabs => "Use sidebar navigation".to_owned(),
+                    NavigationStyle::Sidebar => "Use top tab navigation".to_owned(),
+                },
+                context: "Navigation".to_owned(),
+                description: "Choose where workspace views are listed.".to_owned(),
+                icon: icons::NAVIGATION,
+                search_text: "navigation sidebar tabs placement layout".to_owned(),
+                action: PaletteAction::SetNavigation(match self.config.navigation() {
+                    NavigationStyle::Tabs => NavigationStyle::Sidebar,
+                    NavigationStyle::Sidebar => NavigationStyle::Tabs,
+                }),
+            },
+            PaletteEntry {
+                label: if self.config.navigation_collapsed() {
+                    "Show navigation labels".to_owned()
+                } else {
+                    "Show navigation icons only".to_owned()
+                },
+                context: "Navigation".to_owned(),
+                description: "Expand or collapse the current navigation.".to_owned(),
+                icon: if self.config.navigation_collapsed() {
+                    icons::EXPAND
+                } else {
+                    icons::COLLAPSE
+                },
+                search_text: "navigation icons labels collapse expand compact".to_owned(),
+                action: PaletteAction::SetNavigationCollapsed(!self.config.navigation_collapsed()),
+            },
+            PaletteEntry {
+                label: "Show help".to_owned(),
+                context: "Workspace".to_owned(),
+                description: "Show available keyboard and mouse shortcuts.".to_owned(),
+                icon: icons::HELP,
+                search_text: "show help keyboard shortcuts".to_owned(),
+                action: PaletteAction::ShowHelp,
             },
         ]);
         entries
@@ -2338,6 +2470,16 @@ impl Workspace {
             }
             PaletteAction::ToggleInspector => self.toggle_inspector(),
             PaletteAction::ToggleDrawer => self.toggle_drawer(),
+            PaletteAction::SetNavigation(navigation) => {
+                self.config.set_navigation(navigation);
+                self.tab_scroll = 0;
+                self.last_tab_items.clear();
+            }
+            PaletteAction::SetNavigationCollapsed(collapsed) => {
+                self.config.set_navigation_collapsed(collapsed);
+                self.tab_scroll = 0;
+                self.last_tab_items.clear();
+            }
             PaletteAction::ShowHelp => self.help_open = true,
             PaletteAction::Quit => self.should_quit = true,
         }
@@ -2446,18 +2588,42 @@ impl Workspace {
         inspector_open: bool,
         drawer_open: bool,
         preset: LayoutPreset,
+        navigation_style: NavigationStyle,
+        navigation_collapsed: bool,
         footer_height: u16,
     ) -> ShellRects {
-        let [tabs, body, status] = Layout::vertical([
-            Constraint::Length(TAB_ROW_HEIGHT),
-            Constraint::Min(1),
-            Constraint::Length(footer_height.max(1)),
-        ])
-        .areas(area);
+        let (navigation, body, status) = match navigation_style {
+            NavigationStyle::Tabs => {
+                let [navigation, body, status] = Layout::vertical([
+                    Constraint::Length(TAB_ROW_HEIGHT),
+                    Constraint::Min(1),
+                    Constraint::Length(footer_height.max(1)),
+                ])
+                .areas(area);
+                (navigation, body, status)
+            }
+            NavigationStyle::Sidebar => {
+                let [workspace, status] = Layout::vertical([
+                    Constraint::Min(1),
+                    Constraint::Length(footer_height.max(1)),
+                ])
+                .areas(area);
+                let desired_width = if navigation_collapsed {
+                    COLLAPSED_NAVIGATION_WIDTH
+                } else {
+                    SIDEBAR_WIDTH
+                };
+                let navigation_width = desired_width.min(workspace.width.saturating_sub(1));
+                let [navigation, body] =
+                    Layout::horizontal([Constraint::Length(navigation_width), Constraint::Min(1)])
+                        .areas(workspace);
+                (navigation, body, status)
+            }
+        };
 
         let can_show_panel = preset == LayoutPreset::Balanced
-            && area.width > MIN_MAIN_WIDTH + SIDE_PANEL_WIDTH
-            && area.height >= 8;
+            && body.width > MIN_MAIN_WIDTH + SIDE_PANEL_WIDTH + 1
+            && body.height >= 8;
         let show_drawer = drawer_open && can_show_panel;
         let show_inspector = inspector_open && can_show_panel && !show_drawer;
         let state = ShellLayout {
@@ -2481,7 +2647,7 @@ impl Workspace {
         };
 
         ShellRects {
-            tabs,
+            navigation,
             main,
             inspector,
             drawer,
@@ -2517,7 +2683,7 @@ impl Workspace {
         self.tab_cursor = Some(next);
         self.selected = Some(next);
         self.focus = FocusArea::Navigation;
-        self.ensure_tab_visible(self.last_regions.tabs.width);
+        self.ensure_tab_visible(self.last_regions.navigation);
     }
 
     fn activate_tab_cursor(&mut self) {
@@ -2531,7 +2697,7 @@ impl Workspace {
         self.focus = FocusArea::Content;
     }
 
-    fn ensure_tab_visible(&mut self, width: u16) {
+    fn ensure_tab_visible(&mut self, area: Rect) {
         let Some(target) = (if self.focus == FocusArea::Navigation {
             self.tab_cursor
         } else {
@@ -2539,17 +2705,31 @@ impl Workspace {
         }) else {
             return;
         };
-        let viewport_width = usize::from(width);
+        if self.config.navigation() == NavigationStyle::Sidebar {
+            let visible_rows = usize::from(area.height / SIDEBAR_ENTRY_HEIGHT).max(1);
+            if target < self.tab_scroll {
+                self.tab_scroll = target;
+            } else if target >= self.tab_scroll.saturating_add(visible_rows) {
+                self.tab_scroll = target.saturating_add(1).saturating_sub(visible_rows);
+            }
+            return;
+        }
+
+        let viewport_width = usize::from(area.width);
         let tab_width = |index: usize| {
             self.views
                 .get(index)
                 .map(|view| {
-                    Line::from(format!(
-                        " {} {} ",
-                        view.value().icon(),
-                        view.descriptor().title()
-                    ))
-                    .width()
+                    if self.config.navigation_collapsed() {
+                        usize::from(COLLAPSED_NAVIGATION_WIDTH - 1)
+                    } else {
+                        Line::from(format!(
+                            " {} {} ",
+                            view.value().icon(),
+                            view.descriptor().title()
+                        ))
+                        .width()
+                    }
                 })
                 .unwrap_or(0)
         };
@@ -2583,6 +2763,7 @@ fn shell_keybindings() -> Vec<crate::Keybinding> {
         crate::Keybinding::new("Lists", "↑/↓, j/k").with_priority(35),
         crate::Keybinding::new("Details", "i").with_priority(20),
         crate::Keybinding::new("Side", "d").with_priority(15),
+        crate::Keybinding::new("Focus", "Alt+← / Esc").with_priority(12),
         crate::Keybinding::new("Commands", "Ctrl+P").with_priority(30),
         crate::Keybinding::new("Help", "?").with_priority(u8::MAX),
         crate::Keybinding::new("Quit", "q").with_priority(10),
@@ -2622,10 +2803,23 @@ fn tab_label(
     icon: &str,
     title: &str,
     max_width: usize,
+    icons_only: bool,
     label_style: ratatui::style::Style,
     icon_style: ratatui::style::Style,
 ) -> Option<Line<'static>> {
     const ICON_SLOT_WIDTH: usize = 3;
+    if icons_only {
+        if max_width < ICON_SLOT_WIDTH + 2 {
+            return None;
+        }
+        return Some(centered_icon(
+            icon,
+            (ICON_SLOT_WIDTH + 2) as u16,
+            label_style,
+            icon_style,
+        ));
+    }
+
     const FIXED_WIDTH: usize = 6;
     if max_width < FIXED_WIDTH + 1 {
         return None;
@@ -2645,6 +2839,23 @@ fn tab_label(
         Span::styled(title, label_style),
         Span::styled(" ", label_style),
     ]))
+}
+
+fn centered_icon(
+    icon: &str,
+    width: u16,
+    label_style: ratatui::style::Style,
+    icon_style: ratatui::style::Style,
+) -> Line<'static> {
+    let icon = truncate_to_width(icon, 3);
+    let icon_width = Line::from(icon.as_str()).width().min(usize::from(width));
+    let left_padding = usize::from(width).saturating_sub(icon_width) / 2;
+    let right_padding = usize::from(width).saturating_sub(icon_width + left_padding);
+    Line::from(vec![
+        Span::styled(" ".repeat(left_padding), label_style),
+        Span::styled(icon, icon_style),
+        Span::styled(" ".repeat(right_padding), label_style),
+    ])
 }
 
 fn popup_hints_line(theme: ThemePreset, hints: &[(&str, &str)]) -> Line<'static> {
@@ -2907,7 +3118,7 @@ fn truncate_input_preview(value: &str, max_width: usize) -> String {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ShellRects {
-    tabs: Rect,
+    navigation: Rect,
     main: Rect,
     inspector: Option<Rect>,
     drawer: Option<Rect>,
@@ -3004,20 +3215,55 @@ mod tests {
     }
 
     #[test]
-    fn tabs_remain_visible_and_context_panel_uses_the_right_side() {
+    fn top_tabs_remain_visible_and_context_panel_uses_the_right_side() {
         let layout = Workspace::layout(
             Rect::new(0, 0, 120, 36),
             true,
             false,
             LayoutPreset::Balanced,
+            NavigationStyle::Tabs,
+            false,
             1,
         );
-        assert_eq!(layout.tabs.y, 0);
-        assert_eq!(layout.tabs.height, TAB_ROW_HEIGHT);
+        assert_eq!(layout.navigation.y, 0);
+        assert_eq!(layout.navigation.height, TAB_ROW_HEIGHT);
         assert!(layout.state.inspector);
-        assert_eq!(layout.main.x, layout.tabs.x);
+        assert_eq!(layout.main.x, layout.navigation.x);
         assert!(layout.inspector.unwrap().x > layout.main.x);
         assert_eq!(layout.status.height, 1);
+    }
+
+    #[test]
+    fn sidebar_navigation_sits_beside_independently_bordered_panels() {
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 120, 36),
+            true,
+            false,
+            LayoutPreset::Balanced,
+            NavigationStyle::Sidebar,
+            false,
+            1,
+        );
+        assert_eq!(layout.navigation.x, 0);
+        assert_eq!(layout.navigation.width, SIDEBAR_WIDTH);
+        assert_eq!(layout.main.x, SIDEBAR_WIDTH);
+        assert!(layout.state.inspector);
+        assert!(layout.inspector.unwrap().x > layout.main.x);
+    }
+
+    #[test]
+    fn sidebar_can_collapse_to_an_icon_rail() {
+        let layout = Workspace::layout(
+            Rect::new(0, 0, 120, 36),
+            false,
+            false,
+            LayoutPreset::Balanced,
+            NavigationStyle::Sidebar,
+            true,
+            1,
+        );
+        assert_eq!(layout.navigation.width, COLLAPSED_NAVIGATION_WIDTH);
+        assert_eq!(layout.main.x, COLLAPSED_NAVIGATION_WIDTH);
     }
 
     #[test]
@@ -3027,6 +3273,8 @@ mod tests {
             true,
             false,
             LayoutPreset::Balanced,
+            NavigationStyle::Tabs,
+            false,
             2,
         );
         let focus = Workspace::layout(
@@ -3034,6 +3282,8 @@ mod tests {
             true,
             false,
             LayoutPreset::Focus,
+            NavigationStyle::Tabs,
+            false,
             2,
         );
         assert!(!narrow.state.inspector);
@@ -3049,6 +3299,8 @@ mod tests {
             true,
             true,
             LayoutPreset::Balanced,
+            NavigationStyle::Tabs,
+            false,
             2,
         );
         assert!(!layout.state.inspector);

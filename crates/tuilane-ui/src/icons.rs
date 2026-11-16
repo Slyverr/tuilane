@@ -25,5 +25,8 @@ pub const PERMISSIONS: &str = "\u{f132}"; // nf-fa-shield
 
 pub const INSPECTOR: &str = "\u{f05a}"; // nf-fa-info-circle
 pub const DRAWER: &str = "\u{f0db}"; // nf-fa-columns
+pub const NAVIGATION: &str = "\u{f0c9}"; // nf-fa-bars
+pub const COLLAPSE: &str = "\u{f066}"; // nf-fa-compress
+pub const EXPAND: &str = "\u{f065}"; // nf-fa-expand
 pub const HELP: &str = "\u{f059}"; // nf-fa-question-circle
 pub const QUIT: &str = "\u{f08b}"; // nf-fa-sign-out

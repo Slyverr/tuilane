@@ -8,8 +8,8 @@ use tuilane_plugin_api::{
     ViewDescriptor, ViewId,
 };
 use tuilane_ui::{
-    FocusArea, Keybinding, KeymapPreset, LayoutPreset, ThemePreset, View, ViewAction, ViewDialog,
-    Workspace, WorkspaceConfig, WorkspaceError, icons, render_empty_state,
+    FocusArea, Keybinding, KeymapPreset, LayoutPreset, NavigationStyle, ThemePreset, View,
+    ViewAction, ViewDialog, Workspace, WorkspaceConfig, WorkspaceError, icons, render_empty_state,
 };
 
 struct TestView {
@@ -119,6 +119,10 @@ fn control_key(code: KeyCode) -> KeyEvent {
 
 fn shift_key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::SHIFT)
+}
+
+fn alt_key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::ALT)
 }
 
 fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
@@ -757,6 +761,9 @@ fn built_in_icons_fit_one_terminal_cell() {
         icons::PERMISSIONS,
         icons::INSPECTOR,
         icons::DRAWER,
+        icons::NAVIGATION,
+        icons::COLLAPSE,
+        icons::EXPAND,
         icons::HELP,
         icons::QUIT,
     ];
@@ -896,6 +903,89 @@ fn view_title_appears_in_the_tab_without_a_duplicate_panel_title() {
     let panel_top = (0..80).map(|x| buffer[(x, 1)].symbol()).collect::<String>();
     assert!(tabs.contains("Overview"), "tabs: {tabs}");
     assert!(!panel_top.contains("Overview"), "panel top: {panel_top}");
+}
+
+#[test]
+fn icon_only_tabs_hide_labels_and_keep_the_selected_view_usable() {
+    let config = WorkspaceConfig::default().with_navigation(NavigationStyle::Tabs, true);
+    let mut workspace = Workspace::with_config(config);
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let tabs = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+        .collect::<String>();
+    let content_border = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 1)].symbol())
+        .collect::<String>();
+    assert!(!tabs.contains("Overview"), "tabs: {tabs}");
+    assert!(!tabs.contains("Activity"), "tabs: {tabs}");
+    assert!(
+        content_border.contains("Overview"),
+        "content: {content_border}"
+    );
+}
+
+#[test]
+fn collapsed_sidebar_uses_glyph_rows_and_mouse_activation() {
+    let config = WorkspaceConfig::default().with_navigation(NavigationStyle::Sidebar, true);
+    let mut workspace = Workspace::with_config(config);
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let before = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(!before.contains("Activity"), "screen: {before}");
+
+    workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 4));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let after = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(after.contains("Activity"), "screen: {after}");
+}
+
+#[test]
+fn expanded_sidebar_highlights_each_three_line_navigation_entry() {
+    let config = WorkspaceConfig::default().with_navigation(NavigationStyle::Sidebar, false);
+    let mut workspace = Workspace::with_config(config);
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let buffer = terminal.backend().buffer();
+    for y in 0..3 {
+        for x in 0..24 {
+            assert_eq!(buffer[(x, y)].bg, Color::Cyan, "cell ({x}, {y})");
+        }
+    }
+    assert_eq!(buffer[(0, 3)].bg, Color::Reset);
 }
 
 #[test]
@@ -1142,6 +1232,49 @@ fn command_palette_runs_shell_actions_and_traps_keys() {
 
     assert!(!workspace.command_palette_is_open());
     assert_eq!(workspace.focus(), FocusArea::Inspector);
+}
+
+#[test]
+fn command_palette_switches_navigation_layout_and_collapse_state() {
+    let mut workspace = workspace_with_two_views();
+
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    for character in "navigation sidebar".chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
+    assert_eq!(workspace.config().navigation(), NavigationStyle::Sidebar);
+
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    for character in "icons".chars() {
+        workspace.handle_key(key(KeyCode::Char(character)));
+    }
+    workspace.handle_key(key(KeyCode::Enter));
+    assert!(workspace.config().navigation_collapsed());
+}
+
+#[test]
+fn sidebar_keyboard_navigation_preserves_view_actions_until_entered() {
+    let config = WorkspaceConfig::default().with_navigation(NavigationStyle::Sidebar, false);
+    let mut workspace = Workspace::with_config(config);
+    workspace
+        .register_view(TestView::new("overview", "Overview"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("activity", "Activity"))
+        .unwrap();
+    workspace
+        .register_view(TestView::new("calendar", "Calendar"))
+        .unwrap();
+
+    workspace.handle_key(alt_key(KeyCode::Left));
+    assert_eq!(workspace.focus(), FocusArea::Navigation);
+    workspace.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
+    assert_eq!(workspace.focus(), FocusArea::Navigation);
+    workspace.handle_key(key(KeyCode::Char('l')));
+    assert_eq!(workspace.focus(), FocusArea::Content);
+    assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
 }
 
 #[test]

@@ -538,7 +538,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
         workspace: workspace_config,
         assistant,
         path: config_path,
-        original_dashboard,
+        original_workspace,
     } = config;
     let runtime = Runtime::open()?;
     let mut workspace = Workspace::with_config(workspace_config);
@@ -590,11 +590,7 @@ fn run_workspace() -> Result<(), Box<dyn Error>> {
         ))?;
     }
     let workspace = tuilane_ui::run(workspace)?;
-    config::save_dashboard_layout(
-        &config_path,
-        &original_dashboard,
-        workspace.config().dashboard_layout(),
-    )?;
+    config::save_workspace_preferences(&config_path, &original_workspace, workspace.config())?;
     Ok(())
 }
 

@@ -117,6 +117,26 @@ impl LayoutPreset {
     }
 }
 
+/// Selects the shell's view-navigation presentation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NavigationStyle {
+    /// Place views in a horizontal bar above the workspace.
+    #[default]
+    Tabs,
+    /// Place views in a vertical rail beside the workspace.
+    Sidebar,
+}
+
+impl NavigationStyle {
+    /// Returns the configuration name for this navigation style.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Tabs => "tabs",
+            Self::Sidebar => "sidebar",
+        }
+    }
+}
+
 /// Configured view-navigation key preset name.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum KeymapPreset {
@@ -143,6 +163,8 @@ pub struct WorkspaceConfig {
     theme: ThemePreset,
     layout: LayoutPreset,
     keymap: KeymapPreset,
+    navigation: NavigationStyle,
+    navigation_collapsed: bool,
     dashboard: DashboardLayout,
 }
 
@@ -153,8 +175,17 @@ impl WorkspaceConfig {
             theme,
             layout,
             keymap,
+            navigation: NavigationStyle::default(),
+            navigation_collapsed: false,
             dashboard: DashboardLayout::default(),
         }
+    }
+
+    /// Sets the navigation presentation and whether it shows labels.
+    pub fn with_navigation(mut self, navigation: NavigationStyle, collapsed: bool) -> Self {
+        self.navigation = navigation;
+        self.navigation_collapsed = collapsed;
+        self
     }
 
     /// Uses a saved dashboard layout with the selected shell presets.
@@ -176,6 +207,26 @@ impl WorkspaceConfig {
     /// Returns the selected navigation keymap.
     pub const fn keymap(&self) -> KeymapPreset {
         self.keymap
+    }
+
+    /// Returns the selected navigation presentation.
+    pub const fn navigation(&self) -> NavigationStyle {
+        self.navigation
+    }
+
+    /// Returns whether navigation labels are collapsed to icons.
+    pub const fn navigation_collapsed(&self) -> bool {
+        self.navigation_collapsed
+    }
+
+    /// Changes the navigation presentation.
+    pub fn set_navigation(&mut self, navigation: NavigationStyle) {
+        self.navigation = navigation;
+    }
+
+    /// Shows or hides navigation labels.
+    pub fn set_navigation_collapsed(&mut self, collapsed: bool) {
+        self.navigation_collapsed = collapsed;
     }
 
     /// Returns the user's saved dashboard widget order and settings.

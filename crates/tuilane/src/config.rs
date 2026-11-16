@@ -11,7 +11,9 @@ use std::{
 use directories::ProjectDirs;
 use serde::Deserialize;
 use tuilane_assistant::{AssistantConfig, AssistantConfigError, DEFAULT_ENDPOINT};
-use tuilane_ui::{DashboardLayout, KeymapPreset, LayoutPreset, ThemePreset, WorkspaceConfig};
+use tuilane_ui::{
+    DashboardLayout, KeymapPreset, LayoutPreset, NavigationStyle, ThemePreset, WorkspaceConfig,
+};
 
 const CONFIG_ENV: &str = "TUILANE_CONFIG";
 const CONFIG_VERSION: u32 = 1;
@@ -166,7 +168,7 @@ pub(super) struct ApplicationConfig {
     pub(super) workspace: WorkspaceConfig,
     pub(super) assistant: Option<AssistantConfig>,
     pub(super) path: PathBuf,
-    pub(super) original_dashboard: DashboardLayout,
+    pub(super) original_workspace: WorkspaceConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,6 +177,8 @@ struct UiConfig {
     theme: String,
     layout: String,
     keymap: String,
+    navigation: String,
+    navigation_collapsed: bool,
     dashboard: DashboardLayout,
 }
 
@@ -184,6 +188,8 @@ impl Default for UiConfig {
             theme: ThemePreset::default().as_str().to_owned(),
             layout: LayoutPreset::default().as_str().to_owned(),
             keymap: KeymapPreset::default().as_str().to_owned(),
+            navigation: NavigationStyle::default().as_str().to_owned(),
+            navigation_collapsed: false,
             dashboard: DashboardLayout::default(),
         }
     }
@@ -230,7 +236,19 @@ impl FileConfig {
                 });
             }
         };
+        let navigation = match self.ui.navigation.as_str() {
+            "tabs" => NavigationStyle::Tabs,
+            "sidebar" => NavigationStyle::Sidebar,
+            _ => {
+                return Err(ConfigError::UnsupportedValue {
+                    key: "ui.navigation",
+                    value: self.ui.navigation.clone(),
+                    path: path.to_owned(),
+                });
+            }
+        };
         Ok(WorkspaceConfig::new(theme, layout, keymap)
+            .with_navigation(navigation, self.ui.navigation_collapsed)
             .with_dashboard_layout(self.ui.dashboard.clone()))
     }
 
@@ -262,7 +280,7 @@ impl FileConfig {
             None
         };
         Ok(ApplicationConfig {
-            original_dashboard: workspace.dashboard_layout().clone(),
+            original_workspace: workspace.clone(),
             workspace,
             assistant,
             path: path.to_owned(),
@@ -290,7 +308,7 @@ pub(super) fn load_application_config() -> Result<ApplicationConfig, ConfigError
         Err(error) if error.kind() == io::ErrorKind::NotFound && !explicit => {
             let workspace = WorkspaceConfig::default();
             Ok(ApplicationConfig {
-                original_dashboard: workspace.dashboard_layout().clone(),
+                original_workspace: workspace.clone(),
                 workspace,
                 assistant: None,
                 path,
@@ -300,12 +318,15 @@ pub(super) fn load_application_config() -> Result<ApplicationConfig, ConfigError
     }
 }
 
-pub(super) fn save_dashboard_layout(
+pub(super) fn save_workspace_preferences(
     path: &Path,
-    original: &DashboardLayout,
-    dashboard: &DashboardLayout,
+    original: &WorkspaceConfig,
+    workspace: &WorkspaceConfig,
 ) -> Result<(), ConfigError> {
-    if original == dashboard {
+    let dashboard_changed = original.dashboard_layout() != workspace.dashboard_layout();
+    let navigation_changed = original.navigation() != workspace.navigation();
+    let collapse_changed = original.navigation_collapsed() != workspace.navigation_collapsed();
+    if !dashboard_changed && !navigation_changed && !collapse_changed {
         return Ok(());
     }
 
@@ -336,13 +357,6 @@ pub(super) fn save_dashboard_layout(
             path: path.to_owned(),
             source,
         })?;
-    let serialized_dashboard = toml_edit::ser::to_document(dashboard).map_err(|source| {
-        ConfigError::DashboardSerialize {
-            path: path.to_owned(),
-            source,
-        }
-    })?;
-    let dashboard_item = toml_edit::Item::Table(serialized_dashboard.into_table());
     let ui = document
         .as_table_mut()
         .entry("ui")
@@ -354,7 +368,29 @@ pub(super) fn save_dashboard_layout(
             path: path.to_owned(),
         });
     };
-    ui.insert("dashboard", dashboard_item);
+    if dashboard_changed {
+        let serialized_dashboard = toml_edit::ser::to_document(workspace.dashboard_layout())
+            .map_err(|source| ConfigError::DashboardSerialize {
+                path: path.to_owned(),
+                source,
+            })?;
+        ui.insert(
+            "dashboard",
+            toml_edit::Item::Table(serialized_dashboard.into_table()),
+        );
+    }
+    if navigation_changed {
+        ui.insert(
+            "navigation",
+            toml_edit::value(workspace.navigation().as_str()),
+        );
+    }
+    if collapse_changed {
+        ui.insert(
+            "navigation_collapsed",
+            toml_edit::value(workspace.navigation_collapsed()),
+        );
+    }
     let contents = document.to_string();
     write_config_atomically(path, contents.as_bytes())
 }
@@ -483,6 +519,18 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_navigation_and_icon_only_mode_are_parsed() {
+        let config = parse_config(
+            "[ui]\nnavigation = 'sidebar'\nnavigation_collapsed = true\n",
+            Path::new("tuilane.toml"),
+        )
+        .unwrap();
+
+        assert_eq!(config.navigation(), NavigationStyle::Sidebar);
+        assert!(config.navigation_collapsed());
+    }
+
+    #[test]
     fn assistant_is_disabled_by_default_and_enabled_only_with_a_model() {
         let defaults = parse_application_config("", Path::new("tuilane.toml")).unwrap();
         assert!(defaults.assistant.is_none());
@@ -533,13 +581,20 @@ mod tests {
             })
         ));
         assert!(matches!(
+            parse_config("[ui]\nnavigation = 'left'", Path::new("tuilane.toml")),
+            Err(ConfigError::UnsupportedValue {
+                key: "ui.navigation",
+                ..
+            })
+        ));
+        assert!(matches!(
             parse_config("[unknown]\nvalue = true", Path::new("tuilane.toml")),
             Err(ConfigError::Parse { .. })
         ));
     }
 
     #[test]
-    fn dashboard_layout_saves_without_losing_other_configuration() {
+    fn workspace_preferences_save_without_losing_other_configuration() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -556,23 +611,31 @@ mod tests {
         )
         .unwrap();
 
+        let source = fs::read_to_string(&path).unwrap();
+        let original = parse_application_config(&source, &path).unwrap().workspace;
         let id = DashboardWidgetId::new("tuilane.tasks.open").unwrap();
         let preference = DashboardWidgetPreference::new(id, DashboardSize::Wide);
         let dashboard = DashboardLayout::new(vec![preference]);
-        save_dashboard_layout(&path, &DashboardLayout::default(), &dashboard).unwrap();
+        let updated = original
+            .clone()
+            .with_navigation(NavigationStyle::Sidebar, true)
+            .with_dashboard_layout(dashboard.clone());
+        save_workspace_preferences(&path, &original, &updated).unwrap();
 
         let saved = fs::read_to_string(&path).unwrap();
         assert!(saved.contains("# Preserve user notes"));
         assert!(saved.contains("# keep the contrast"));
         let parsed = parse_application_config(&saved, &path).unwrap();
         assert_eq!(parsed.workspace.dashboard_layout(), &dashboard);
+        assert_eq!(parsed.workspace.navigation(), NavigationStyle::Sidebar);
+        assert!(parsed.workspace.navigation_collapsed());
         assert_eq!(parsed.workspace.theme(), ThemePreset::HighContrast);
         assert_eq!(
             parsed.assistant.as_ref().map(AssistantConfig::model),
             Some("qwen3:8b")
         );
 
-        save_dashboard_layout(&path, &dashboard, &dashboard).unwrap();
+        save_workspace_preferences(&path, &updated, &updated).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), saved);
         fs::remove_dir_all(directory).unwrap();
     }
