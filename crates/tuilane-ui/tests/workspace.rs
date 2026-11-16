@@ -560,7 +560,24 @@ fn clicking_a_view_in_the_alt_tab_picker_activates_it() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
 
-    assert!(workspace.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 15, 11)));
+    let activity_row = (0..24)
+        .find(|row| {
+            *row > 0
+                && (0..80)
+                    .map(|column| terminal.backend().buffer()[(column, *row)].symbol())
+                    .collect::<String>()
+                    .contains("Activity")
+                && (0..80)
+                    .map(|column| terminal.backend().buffer()[(column, *row)].symbol())
+                    .collect::<String>()
+                    .contains("›")
+        })
+        .expect("activity should appear in the view picker");
+    assert!(workspace.handle_mouse(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        20,
+        activity_row,
+    )));
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "activity");
 }
 
@@ -574,17 +591,31 @@ fn tab_picker_filters_views_and_backspace_edits_the_query() {
 
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal.draw(|frame| workspace.render(frame)).unwrap();
-    let calendar_row = (0..80)
-        .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
+    let calendar_screen = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(calendar_row.contains("Calendar"), "row: {calendar_row}");
+    assert!(
+        calendar_screen.contains("Calendar"),
+        "screen: {calendar_screen}"
+    );
 
     workspace.handle_key(key(KeyCode::Char('d')));
     terminal.draw(|frame| workspace.render(frame)).unwrap();
-    let empty_row = (0..80)
-        .map(|x| terminal.backend().buffer()[(x, 11)].symbol())
+    let empty_screen = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(empty_row.contains("No matching views"), "row: {empty_row}");
+    assert!(
+        empty_screen.contains("No matching views"),
+        "screen: {empty_screen}"
+    );
     assert_eq!(workspace.selected_view_id().unwrap().as_str(), "overview");
 
     workspace.handle_key(key(KeyCode::Backspace));
@@ -876,6 +907,12 @@ fn footer_and_help_show_view_owned_shortcuts() {
     assert!(help.contains("Mouse"));
     assert!(help.contains("Switch"));
     assert!(!help.contains("No view shortcuts"));
+    let footer = (0..120)
+        .map(|x| terminal.backend().buffer()[(x, 35)].symbol())
+        .collect::<String>();
+    assert!(footer.contains("[Esc/?] Close"), "footer: {footer}");
+    assert!(footer.contains("[q] Quit"), "footer: {footer}");
+    assert!(!footer.contains("[c] Create"), "footer: {footer}");
 }
 
 #[test]
@@ -1121,10 +1158,128 @@ fn view_dialog_is_rendered_as_a_centered_host_overlay() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
+    let footer = (0..120)
+        .map(|x| buffer[(x, 35)].symbol())
+        .collect::<String>();
     assert!(screen.contains("New entry"));
     assert!(screen.contains("Name"));
     assert!(screen.contains("initial"));
-    assert!(screen.contains("[Enter] Save"));
+    assert!(footer.contains("[Enter] Save"), "footer: {footer}");
+    assert!(footer.contains("[Esc] Cancel"), "footer: {footer}");
+    assert!(!(16..=20).any(|y| {
+        (0..120)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
+            .contains("[Enter] Save")
+    }));
+}
+
+#[test]
+fn command_palette_shortcuts_replace_view_shortcuts_in_the_shared_footer() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(control_key(KeyCode::Char('p')));
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let popup = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    let footer = (0..100)
+        .map(|x| buffer[(x, 23)].symbol())
+        .collect::<String>();
+    assert!(footer.contains("[↑/↓] Move"), "footer: {footer}");
+    assert!(footer.contains("[Enter] Select"), "footer: {footer}");
+    assert!(footer.contains("[Esc] Close"), "footer: {footer}");
+    assert!(!footer.contains("[c] Create"), "footer: {footer}");
+    assert!(!footer.contains("[Ctrl+P]"), "footer: {footer}");
+    assert!(!footer.contains("[?] Help"), "footer: {footer}");
+    assert!(
+        !popup.contains("↑/↓ Move"),
+        "popup should not repeat footer hints"
+    );
+}
+
+#[test]
+fn tab_switcher_shortcuts_replace_view_shortcuts_in_the_shared_footer() {
+    let mut workspace = workspace_with_two_views();
+    workspace.handle_key(alt_key(KeyCode::Tab));
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let footer = (0..100)
+        .map(|x| buffer[(x, 23)].symbol())
+        .collect::<String>();
+    let popup = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(footer.contains("[↑/↓] Move"), "footer: {footer}");
+    assert!(footer.contains("[Enter] Open"), "footer: {footer}");
+    assert!(footer.contains("[Esc] Close"), "footer: {footer}");
+    assert!(!footer.contains("[c] Create"), "footer: {footer}");
+    assert!(
+        !popup.contains("↑/↓ Move"),
+        "popup should not repeat footer hints"
+    );
+}
+
+#[test]
+fn overview_editor_shortcuts_replace_view_shortcuts_in_the_shared_footer() {
+    let mut workspace = Workspace::new();
+    workspace.register_view(DashboardShellView::new()).unwrap();
+    workspace
+        .register_view(DashboardWidgetView {
+            descriptor: ViewDescriptor::new(
+                ViewId::new("activity").unwrap(),
+                "Activity",
+                "Recent activity",
+            ),
+            opened: std::rc::Rc::new(std::cell::Cell::new(false)),
+        })
+        .unwrap();
+    workspace.handle_key(key(KeyCode::Char('e')));
+    let mut terminal = Terminal::new(TestBackend::new(120, 32)).unwrap();
+
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let footer = (0..120)
+        .map(|x| buffer[(x, 31)].symbol())
+        .collect::<String>();
+    let popup = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(footer.contains("[↑/↓] Move"), "footer: {footer}");
+    assert!(footer.contains("[Space] Show/hide"), "footer: {footer}");
+    assert!(footer.contains("[o] Options"), "footer: {footer}");
+    assert!(footer.contains("[Esc/q] Done"), "footer: {footer}");
+    assert!(!footer.contains("[Ctrl+P]"), "footer: {footer}");
+    assert!(!popup.contains("Space Show/hide"));
+
+    workspace.handle_key(key(KeyCode::Char('o')));
+    terminal.draw(|frame| workspace.render(frame)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let footer = (0..120)
+        .map(|x| buffer[(x, 31)].symbol())
+        .collect::<String>();
+    let popup = buffer
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(footer.contains("[↑/↓] Move"), "footer: {footer}");
+    assert!(footer.contains("[←/→] Change"), "footer: {footer}");
+    assert!(footer.contains("[Esc] Back"), "footer: {footer}");
+    assert!(!popup.contains("↑/↓ Choose"));
 }
 
 #[test]

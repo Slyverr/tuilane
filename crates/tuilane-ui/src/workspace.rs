@@ -535,6 +535,11 @@ impl Workspace {
             return;
         }
 
+        if self.dashboard_editor_open {
+            self.handle_dashboard_editor_key(key);
+            return;
+        }
+
         if self.palette_open {
             self.handle_palette_key(key);
             self.capture_notification();
@@ -565,11 +570,6 @@ impl Workspace {
                 KeyCode::Char('q') => self.should_quit = true,
                 _ => {}
             }
-            return;
-        }
-
-        if self.dashboard_editor_open {
-            self.handle_dashboard_editor_key(key);
             return;
         }
 
@@ -995,20 +995,17 @@ impl Workspace {
         let width = area.width.saturating_sub(4).min(60);
         let inner_height = usize::from(area.height.saturating_sub(4));
         let show_detail = inner_height >= 3 && !candidates.is_empty();
-        let show_hints = inner_height >= 4;
         let visible_count = if candidates.is_empty() {
             0
         } else {
             candidates.len().min(
                 inner_height
-                    .saturating_sub(1 + usize::from(show_detail) + usize::from(show_hints))
+                    .saturating_sub(1 + usize::from(show_detail))
                     .max(1),
             )
         };
-        let line_count = 1
-            + visible_count.max(usize::from(candidates.is_empty()))
-            + usize::from(show_detail)
-            + usize::from(show_hints);
+        let line_count =
+            1 + visible_count.max(usize::from(candidates.is_empty())) + usize::from(show_detail);
         let height = (line_count as u16 + 2).min(area.height.saturating_sub(2));
         let overlay = Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
@@ -1075,13 +1072,6 @@ impl Workspace {
                 );
             }
         }
-        if show_hints {
-            lines.push(popup_hints_line(
-                theme,
-                &[("↑/↓", "Move"), ("Enter", "Open"), ("Esc", "Close")],
-            ));
-        }
-
         frame.render_widget(Clear, overlay);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).block(Self::panel_block("Views", true, theme)),
@@ -1129,7 +1119,11 @@ impl Workspace {
         }
         frame.render_widget(Paragraph::new(footer), layout.status);
 
-        if !self.help_open && !self.palette_open && !self.switcher_open {
+        if !self.help_open
+            && !self.palette_open
+            && !self.switcher_open
+            && !self.dashboard_editor_open
+        {
             if self.render_view_dialog(frame, area) {
                 return;
             }
@@ -1769,7 +1763,6 @@ impl Workspace {
                     );
                 }
             }
-            lines.push(Line::from("↑/↓ Choose   ←/→ Change   Esc Back").style(theme.muted_style()));
         } else if entries.is_empty() {
             lines.push(Line::from(
                 "No views currently contribute dashboard widgets.",
@@ -1778,7 +1771,7 @@ impl Workspace {
                 "Widgets will appear here as features are enabled.",
             ));
         } else {
-            let visible_rows = usize::from(inner.height.saturating_sub(2) / 2).max(1);
+            let visible_rows = usize::from(inner.height / 2).max(1);
             let start = self
                 .dashboard_cursor
                 .saturating_sub(visible_rows.saturating_sub(1));
@@ -1874,10 +1867,6 @@ impl Workspace {
                     .style(theme.muted_style()),
                 );
             }
-            lines.push(
-                Line::from("Space Show/hide   Alt+↑/↓ Order   +/- Size   o Options   Esc Done")
-                    .style(theme.muted_style()),
-            );
         }
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
         for (area, text, alignment, style) in controls {
@@ -1893,19 +1882,13 @@ impl Workspace {
         else {
             return false;
         };
-        let keybindings = self
-            .selected
-            .and_then(|index| self.views.get(index))
-            .map(|view| view.value().keybindings(self.focus))
-            .unwrap_or_default();
-
         let theme = self.config.theme();
         let width = area.width.saturating_sub(2).min(72);
         if width < 10 || area.height < 3 {
             return true;
         }
 
-        let (title, mut lines, height) = match dialog {
+        let (title, lines, height) = match dialog {
             ViewDialog::Input {
                 title,
                 label,
@@ -1932,21 +1915,6 @@ impl Workspace {
                 5,
             ),
         };
-        let hints = keybindings
-            .iter()
-            .map(|binding| format!("[{}] {}", binding.key(), binding.action()))
-            .collect::<Vec<_>>()
-            .join("   ");
-        if !hints.is_empty() {
-            lines.push(
-                Line::from(truncate_to_width(
-                    &hints,
-                    usize::from(width.saturating_sub(4)),
-                ))
-                .style(theme.muted_style()),
-            );
-        }
-
         let height = height.min(area.height.saturating_sub(2));
         if height < 3 {
             return true;
@@ -2100,64 +2068,139 @@ impl Workspace {
         );
     }
 
+    fn popup_keybindings(&self) -> Option<Vec<crate::Keybinding>> {
+        if self.dashboard_editor_open {
+            let bindings = if self.dashboard_options_open {
+                vec![
+                    crate::Keybinding::new("Move", "↑/↓").with_priority(100),
+                    crate::Keybinding::new("Change", "←/→").with_priority(90),
+                    crate::Keybinding::new("Change", "Enter/Space").with_priority(80),
+                    crate::Keybinding::new("Back", "Esc").with_priority(70),
+                ]
+            } else {
+                vec![
+                    crate::Keybinding::new("Move", "↑/↓").with_priority(110),
+                    crate::Keybinding::new("Show/hide", "Space").with_priority(100),
+                    crate::Keybinding::new("Order", "Alt+↑/↓").with_priority(90),
+                    crate::Keybinding::new("Size", "+/-").with_priority(80),
+                    crate::Keybinding::new("Options", "o").with_priority(70),
+                    crate::Keybinding::new("Done", "Esc/q").with_priority(60),
+                ]
+            };
+            return Some(bindings);
+        }
+
+        if self.switcher_open {
+            return Some(vec![
+                crate::Keybinding::new("Move", "↑/↓").with_priority(100),
+                crate::Keybinding::new("Open", "Enter").with_priority(90),
+                crate::Keybinding::new("Close", "Esc").with_priority(80),
+                crate::Keybinding::new("Erase", "Backspace").with_priority(70),
+                crate::Keybinding::new("Next", "Alt+Tab").with_priority(60),
+            ]);
+        }
+
+        if self.palette_open {
+            return Some(vec![
+                crate::Keybinding::new("Move", "↑/↓").with_priority(100),
+                crate::Keybinding::new("Select", "Enter").with_priority(90),
+                crate::Keybinding::new("Close", "Esc").with_priority(80),
+                crate::Keybinding::new("Erase", "Backspace").with_priority(70),
+            ]);
+        }
+
+        if self.help_open {
+            return Some(vec![
+                crate::Keybinding::new("Close", "Esc/?").with_priority(100),
+                crate::Keybinding::new("Quit", "q").with_priority(90),
+            ]);
+        }
+
+        let view = self.selected.and_then(|index| self.views.get(index))?;
+        let dialog = view.value().dialog()?;
+        let bindings = view.value().keybindings(self.focus);
+        if !bindings.is_empty() {
+            return Some(bindings);
+        }
+
+        Some(match dialog {
+            ViewDialog::Input { .. } => vec![
+                crate::Keybinding::new("Save", "Enter").with_priority(100),
+                crate::Keybinding::new("Cancel", "Esc").with_priority(90),
+            ],
+            ViewDialog::Confirm { .. } => vec![
+                crate::Keybinding::new("Confirm", "Enter").with_priority(100),
+                crate::Keybinding::new("Cancel", "Esc").with_priority(90),
+            ],
+        })
+    }
+
     fn footer_line(&self, width: usize) -> Line<'static> {
         let theme = self.config.theme();
         if width == 0 {
             return Line::default();
         }
 
-        let mut bindings = self
-            .selected
-            .and_then(|index| self.views.get(index))
-            .map(|view| view.value().keybindings(self.focus))
-            .unwrap_or_default();
-        let shell = shell_keybindings();
-        let help = shell
-            .iter()
-            .find(|binding| binding.key() == "?")
-            .cloned()
-            .unwrap_or_else(|| crate::Keybinding::new("Help", "?"));
-        bindings.extend(
-            shell
-                .into_iter()
-                .filter(|binding| binding.key() == "Ctrl+P"),
-        );
+        let popup_bindings = self.popup_keybindings();
+        let (mut bindings, help) = if let Some(bindings) = popup_bindings {
+            (bindings, None)
+        } else {
+            let mut bindings = self
+                .selected
+                .and_then(|index| self.views.get(index))
+                .map(|view| view.value().keybindings(self.focus))
+                .unwrap_or_default();
+            let shell = shell_keybindings();
+            let help = shell
+                .iter()
+                .find(|binding| binding.key() == "?")
+                .cloned()
+                .unwrap_or_else(|| crate::Keybinding::new("Help", "?"));
+            bindings.extend(
+                shell
+                    .into_iter()
+                    .filter(|binding| binding.key() == "Ctrl+P"),
+            );
+            (bindings, Some(help))
+        };
         bindings.sort_by_key(|binding| std::cmp::Reverse(binding.priority()));
 
         let mut visible = Vec::new();
-        let mut help_label = "Help".to_owned();
-        for _ in 0..4 {
-            let help_text = footer_item_text(help.key(), &help_label);
-            let candidate_space = width.saturating_sub(Line::from(help_text.as_str()).width());
+        let mut hidden = 0usize;
+        for _ in 0..8 {
+            let suffix = if let Some(help) = &help {
+                if hidden == 0 {
+                    footer_item_text(help.key(), "Help")
+                } else {
+                    footer_item_text(help.key(), &format!("Help +{hidden}"))
+                }
+            } else if hidden == 0 {
+                String::new()
+            } else {
+                format!("+{hidden}")
+            };
+            let suffix_width = Line::from(suffix.as_str()).width();
+            let reserved = suffix_width.saturating_add(usize::from(!suffix.is_empty()) * 2);
+            let candidate_space = width.saturating_sub(reserved);
             let mut next_visible = Vec::new();
             let mut used = 0usize;
             for binding in &bindings {
                 let text = footer_item_text(binding.key(), binding.action());
                 let item_width = Line::from(text.as_str()).width();
                 let gap = usize::from(!next_visible.is_empty()) * 2;
-                let trailing_gap = 2;
-                if used
-                    .saturating_add(gap)
-                    .saturating_add(item_width)
-                    .saturating_add(trailing_gap)
-                    <= candidate_space
-                {
+                if used.saturating_add(gap).saturating_add(item_width) <= candidate_space {
                     used = used.saturating_add(gap).saturating_add(item_width);
                     next_visible.push(binding);
                 }
             }
-            let hidden = bindings.len().saturating_sub(next_visible.len());
-            let next_label = if hidden == 0 {
-                "Help".to_owned()
-            } else {
-                format!("Help +{hidden}")
-            };
-            if next_visible.len() == visible.len() && next_label == help_label {
+            let next_hidden = bindings.len().saturating_sub(next_visible.len());
+            if next_hidden == hidden && next_visible.len() == visible.len() {
                 visible = next_visible;
+                hidden = next_hidden;
                 break;
             }
             visible = next_visible;
-            help_label = next_label;
+            hidden = next_hidden;
         }
 
         let mut spans = Vec::new();
@@ -2167,16 +2210,41 @@ impl Workspace {
             }
             spans.extend(footer_item_spans(binding.key(), binding.action(), theme));
         }
-        if !spans.is_empty() {
-            spans.push(Span::raw("  "));
+        let suffix = if let Some(help) = &help {
+            let label = if hidden == 0 {
+                "Help".to_owned()
+            } else {
+                format!("Help +{hidden}")
+            };
+            Some(footer_item_spans(help.key(), &label, theme))
+        } else if hidden > 0 {
+            Some(vec![Span::styled(
+                format!("+{hidden}"),
+                theme.muted_style(),
+            )])
+        } else {
+            None
+        };
+        if let Some(suffix) = suffix {
+            if !spans.is_empty() {
+                spans.push(Span::raw("  "));
+            }
+            spans.extend(suffix);
         }
-        spans.extend(footer_item_spans(help.key(), &help_label, theme));
+
         let line = Line::from(spans);
         if line.width() <= width {
-            line
-        } else {
+            return line;
+        }
+        if let Some(help) = help {
             let short_help = footer_item_text(help.key(), "Help");
             Line::from(truncate_to_width(&short_help, width)).style(theme.header_style())
+        } else {
+            let first = bindings
+                .first()
+                .map(|binding| footer_item_text(binding.key(), binding.action()))
+                .unwrap_or_default();
+            Line::from(truncate_to_width(&first, width)).style(theme.header_style())
         }
     }
 
@@ -2493,20 +2561,17 @@ impl Workspace {
         let width = area.width.saturating_sub(2).min(72);
         let inner_height = usize::from(area.height.saturating_sub(4));
         let show_detail = inner_height >= 3 && !entries.is_empty();
-        let show_hints = inner_height >= 4;
         let visible_count = if entries.is_empty() {
             0
         } else {
             entries.len().min(7).min(
                 inner_height
-                    .saturating_sub(1 + usize::from(show_detail) + usize::from(show_hints))
+                    .saturating_sub(1 + usize::from(show_detail))
                     .max(1),
             )
         };
-        let line_count = 1
-            + visible_count.max(usize::from(entries.is_empty()))
-            + usize::from(show_detail)
-            + usize::from(show_hints);
+        let line_count =
+            1 + visible_count.max(usize::from(entries.is_empty())) + usize::from(show_detail);
         let height = (line_count as u16 + 2).min(area.height.saturating_sub(2));
         let overlay = Rect {
             x: area.x + (area.width.saturating_sub(width)) / 2,
@@ -2553,12 +2618,6 @@ impl Workspace {
                         .style(theme.muted_style()),
                 );
             }
-        }
-        if show_hints {
-            lines.push(popup_hints_line(
-                theme,
-                &[("↑/↓", "Move"), ("Enter", "Select"), ("Esc", "Close")],
-            ));
         }
         frame.render_widget(Clear, overlay);
         frame.render_widget(
@@ -2856,19 +2915,6 @@ fn centered_icon(
         Span::styled(icon, icon_style),
         Span::styled(" ".repeat(right_padding), label_style),
     ])
-}
-
-fn popup_hints_line(theme: ThemePreset, hints: &[(&str, &str)]) -> Line<'static> {
-    let mut spans = Vec::with_capacity(hints.len() * 3);
-    for (index, (key, action)) in hints.iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::raw("   "));
-        }
-        spans.push(Span::styled((*key).to_owned(), theme.header_style()));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled((*action).to_owned(), theme.muted_style()));
-    }
-    Line::from(spans)
 }
 
 fn palette_entry_line(
